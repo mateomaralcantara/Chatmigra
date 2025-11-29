@@ -1,0 +1,7 @@
+{
+  "name": "ChatMig - AI Immigration Assistant",
+  "description": "An AI-powered conversational assistant to help people and companies understand and plan immigration processes. It provides clear, structured, and actionable guidance for visas, residence, and more.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
