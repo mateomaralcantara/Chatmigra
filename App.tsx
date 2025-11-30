@@ -1,18 +1,24 @@
 import './index.css';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from 'react';
 import { ChatMessage, Plan, Conversation, User } from './types';
 import { runChatStream, connectToVoiceAgent } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 import Header from './components/Header';
 import ChatWindow from './components/ChatWindow';
 import ChatInput from './components/ChatInput';
-import SuggestedPrompts from './components/SuggestedPrompts';
 import ConversationHistory from './components/ConversationHistory';
 import VoiceAgentOverlay from './components/VoiceAgentOverlay';
 import AccountDashboard from './components/AccountDashboard';
-import AdminDashboard from './components/AdminDashboard';
+import SuggestedPrompts from './components/SuggestedPrompts';
 
-type View = 'chat' | 'dashboard' | 'admin';
+
+type View = 'chat' | 'dashboard';
 
 interface AppProps {
   user: User;
@@ -21,8 +27,6 @@ interface AppProps {
   initialView?: View;
 }
 
-const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL as string | undefined;
-
 const INITIAL_MESSAGE: ChatMessage = {
   role: 'model',
   content:
@@ -30,33 +34,38 @@ const INITIAL_MESSAGE: ChatMessage = {
 };
 
 const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
-  const isAdmin =
-    !!ADMIN_EMAIL && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-
+  // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [currentConversationId, setCurrentConversationId] =
+    useState<string | null>(null);
+
+  // UI / flujo
+  const [currentView, setCurrentView] = useState<View>(
+    initialView ?? 'chat'
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<View>(
-    initialView ?? (isAdmin ? 'admin' : 'chat')
-  );
 
+  // Voice agent
   const [isVoiceAgentActive, setIsVoiceAgentActive] = useState(false);
   const [agentStatus, setAgentStatus] = useState<
     'idle' | 'connecting' | 'listening' | 'speaking' | 'error'
   >('idle');
-  const [liveTranscription, setLiveTranscription] = useState<{ user: string; model: string }>({
-    user: '',
-    model: '',
-  });
+  const [liveTranscription, setLiveTranscription] = useState<{
+    user: string;
+    model: string;
+  }>({ user: '', model: '' });
 
   const sessionRef = useRef<any | null>(null);
   const userTranscriptionRef = useRef('');
   const modelTranscriptionRef = useRef('');
 
+  // ---------- CARGA DE HISTORIAL ----------
+
   useEffect(() => {
-    if (currentView === 'admin' && isAdmin) return;
+    // Solo cargamos historial cuando estamos en el chat
+    if (currentView !== 'chat') return;
 
     const fetchConversations = async () => {
       try {
@@ -71,9 +80,10 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
           setError(
             'No se pudo cargar el historial de conversaciones. Verifica que las tablas de Supabase estén configuradas.'
           );
-        } else {
-          setConversations((data as Conversation[]) || []);
+          return;
         }
+
+        setConversations((data as Conversation[]) || []);
       } catch (e) {
         console.error('Error inesperado cargando conversaciones:', e);
         setError('Error inesperado al cargar el historial.');
@@ -81,7 +91,9 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
     };
 
     fetchConversations();
-  }, [user.email, currentView, isAdmin]);
+  }, [user.email, currentView]);
+
+  // ---------- MANEJO DE CONVERSACIONES ----------
 
   const handleNewConversation = () => {
     setCurrentConversationId(null);
@@ -89,7 +101,7 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
       {
         role: 'model',
         content:
-          '¡Hola! Soy **ChatMig**, tu asistente migratorio. ¿Cómo puedo orientarte hoy? Cuéntame sobre tu país de ciudadanía, país de destino y tu objetivo (turismo, trabajo, estudios, etc.).',
+          '¡Hola! Soy **ChatMig**, tu asistente migratorio. ¿Cómo puedo orientarte hoy? Cuéntame tu país de ciudadanía, país de destino y tu objetivo (turismo, trabajo, estudios, etc.).',
       },
     ]);
     setError(null);
@@ -97,6 +109,7 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
 
   const handleSelectConversation = async (id: string) => {
     if (isLoading) return;
+
     setIsLoading(true);
     setError(null);
     setCurrentConversationId(id);
@@ -112,13 +125,15 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
         console.error('Error fetching messages:', error);
         setError('No se pudieron cargar los mensajes de esta conversación.');
         setMessages([]);
-      } else {
-        const loadedMessages: ChatMessage[] = (data || []).map((m: any) => ({
-          role: m.role as 'user' | 'model',
-          content: m.content,
-        }));
-        setMessages(loadedMessages.length ? loadedMessages : [INITIAL_MESSAGE]);
+        return;
       }
+
+      const loadedMessages: ChatMessage[] = (data || []).map((m: any) => ({
+        role: m.role as 'user' | 'model',
+        content: m.content,
+      }));
+
+      setMessages(loadedMessages.length ? loadedMessages : [INITIAL_MESSAGE]);
     } catch (e) {
       console.error('Error inesperado cargando mensajes:', e);
       setError('Ocurrió un error al cargar los mensajes.');
@@ -128,22 +143,28 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
     }
   };
 
+  // ---------- ENVIAR MENSAJE / GEMINI STREAM ----------
+
   const handleSendMessage = useCallback(
     async (inputText: string) => {
-      if (!inputText.trim() || isLoading) return;
+      const text = inputText.trim();
+      if (!text || isLoading) return;
 
       setError(null);
       setIsLoading(true);
 
       const isNewConversation = !currentConversationId;
-      const newUserMessage: ChatMessage = { role: 'user', content: inputText };
+      const newUserMessage: ChatMessage = { role: 'user', content: text };
 
-      const updatedMessages = [...(isNewConversation ? [] : messages), newUserMessage];
+      const baseMessages = isNewConversation ? [] : messages;
+      const updatedMessages = [...baseMessages, newUserMessage];
+
       setMessages(updatedMessages);
 
       let convId = currentConversationId;
 
       try {
+        // Crear conversación si no existe
         if (!convId) {
           const { data, error } = await supabase
             .from('conversations')
@@ -160,17 +181,22 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
 
           convId = data.id;
           setCurrentConversationId(convId);
-          setConversations(prev => [{ id: convId!, created_at: data.created_at }, ...prev]);
+          setConversations(prev => [
+            { id: convId!, created_at: data.created_at },
+            ...prev,
+          ]);
         }
 
+        // Guardar mensaje de usuario
         await supabase.from('messages').insert([
           {
             conversation_id: convId,
             role: 'user',
-            content: inputText,
+            content: text,
           },
         ]);
 
+        // Placeholder del modelo
         setMessages(prev => [...prev, { role: 'model', content: '' }]);
 
         const stream = await runChatStream(updatedMessages, plan);
@@ -185,21 +211,20 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
             chunkText = chunk.text;
           }
 
-          if (chunkText) {
-            fullModelResponse += chunkText;
+          if (!chunkText) continue;
 
-            setMessages(prev => {
-              const lastMessage = prev[prev.length - 1];
-              if (lastMessage && lastMessage.role === 'model') {
-                const updatedLastMessage: ChatMessage = {
-                  ...lastMessage,
-                  content: fullModelResponse,
-                };
-                return [...prev.slice(0, -1), updatedLastMessage];
-              }
-              return prev;
-            });
-          }
+          fullModelResponse += chunkText;
+
+          setMessages(prev => {
+            const last = prev[prev.length - 1];
+            if (!last || last.role !== 'model') return prev;
+
+            const updatedLast: ChatMessage = {
+              ...last,
+              content: fullModelResponse,
+            };
+            return [...prev.slice(0, -1), updatedLast];
+          });
         }
 
         if (fullModelResponse) {
@@ -211,6 +236,7 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
             },
           ]);
         } else {
+          // Si no vino nada, quitamos el placeholder vacío
           setMessages(prev => {
             const last = prev[prev.length - 1];
             if (last && last.role === 'model' && !last.content) {
@@ -220,14 +246,18 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
           });
         }
       } catch (e: any) {
-        const errorMessage = e instanceof Error ? e.message : 'Ocurrió un error inesperado.';
-        console.error('Gemini API Error:', errorMessage);
-        const userFriendlyError = `Lo siento, ocurrió un error. Por favor, intenta de nuevo. (${errorMessage})`;
-        setError(userFriendlyError);
+        const errMsg =
+          e instanceof Error ? e.message : 'Ocurrió un error inesperado.';
+        console.error('Gemini API Error:', errMsg);
 
+        setError(
+          `Lo siento, ocurrió un error. Por favor, intenta de nuevo. (${errMsg})`
+        );
+
+        // limpiar placeholder vacío si falló
         setMessages(prev => {
-          const lastMessage = prev[prev.length - 1];
-          if (lastMessage && lastMessage.role === 'model' && lastMessage.content === '') {
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'model' && last.content === '') {
             return prev.slice(0, -1);
           }
           return prev;
@@ -239,79 +269,103 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
     [isLoading, messages, plan, currentConversationId, user.email]
   );
 
+  // ---------- VOICE AGENT ----------
+
+  const stopVoiceAgent = async (sendTranscript: boolean) => {
+    setAgentStatus('idle');
+    setIsVoiceAgentActive(false);
+    sessionRef.current?.close();
+    sessionRef.current = null;
+
+    if (sendTranscript) {
+      const userText = userTranscriptionRef.current.trim();
+      const modelText = modelTranscriptionRef.current.trim();
+
+      if (userText || modelText) {
+        const transcript = `**Transcripción de la conversación de voz:**\n\n**Tú:** ${userText}\n\n**ChatMig:** ${modelText}`;
+        await handleSendMessage(transcript);
+      }
+    }
+
+    userTranscriptionRef.current = '';
+    modelTranscriptionRef.current = '';
+    setLiveTranscription({ user: '', model: '' });
+  };
+
   const toggleVoiceAgent = async () => {
     if (isVoiceAgentActive) {
-      setAgentStatus('idle');
-      setIsVoiceAgentActive(false);
-      sessionRef.current?.close();
-      sessionRef.current = null;
+      // Al cerrar, mandamos la transcripción como mensaje
+      await stopVoiceAgent(true);
+      return;
+    }
 
-      if (userTranscriptionRef.current || modelTranscriptionRef.current) {
-        const transcript = `**Transcripción de la conversación de voz:**\n\n**Tú:** ${userTranscriptionRef.current}\n\n**ChatMig:** ${modelTranscriptionRef.current}`;
-        handleSendMessage(transcript);
-      }
+    try {
+      setAgentStatus('connecting');
+      setIsVoiceAgentActive(true);
+      setLiveTranscription({ user: '', model: '' });
 
-      userTranscriptionRef.current = '';
-      modelTranscriptionRef.current = '';
-    } else {
-      try {
-        setAgentStatus('connecting');
-        setIsVoiceAgentActive(true);
-        setLiveTranscription({ user: '', model: '' });
-
-        const session = await connectToVoiceAgent(
-          {
-            onOpen: () => setAgentStatus('listening'),
-            onUserTranscription: text => {
-              userTranscriptionRef.current += text;
-              setLiveTranscription(prev => ({
-                ...prev,
-                user: userTranscriptionRef.current,
-              }));
-            },
-            onModelTranscription: text => {
-              modelTranscriptionRef.current += text;
-              setLiveTranscription(prev => ({
-                ...prev,
-                model: modelTranscriptionRef.current,
-              }));
-            },
-            onModelSpeaking: isSpeaking =>
-              setAgentStatus(isSpeaking ? 'speaking' : 'listening'),
-            onTurnComplete: () => {
-              userTranscriptionRef.current = '';
-              modelTranscriptionRef.current = '';
-            },
-            onError: e => {
-              console.error('Voice Agent Error:', e);
-              setError('Error en la conexión de voz.');
-              setAgentStatus('error');
-            },
-            onClose: () => {
-              if (isVoiceAgentActive) {
-                setAgentStatus('idle');
-                setIsVoiceAgentActive(false);
-              }
-            },
+      const session = await connectToVoiceAgent(
+        {
+          onOpen: () => setAgentStatus('listening'),
+          onUserTranscription: text => {
+            userTranscriptionRef.current += text;
+            setLiveTranscription(prev => ({
+              ...prev,
+              user: userTranscriptionRef.current,
+            }));
           },
-          plan
-        );
+          onModelTranscription: text => {
+            modelTranscriptionRef.current += text;
+            setLiveTranscription(prev => ({
+              ...prev,
+              model: modelTranscriptionRef.current,
+            }));
+          },
+          onModelSpeaking: isSpeaking =>
+            setAgentStatus(isSpeaking ? 'speaking' : 'listening'),
+          onTurnComplete: () => {
+            userTranscriptionRef.current = '';
+            modelTranscriptionRef.current = '';
+          },
+          onError: e => {
+            console.error('Voice Agent Error:', e);
+            setError('Error en la conexión de voz.');
+            setAgentStatus('error');
+          },
+          onClose: () => {
+            if (isVoiceAgentActive) {
+              setAgentStatus('idle');
+              setIsVoiceAgentActive(false);
+            }
+          },
+        },
+        plan
+      );
 
-        sessionRef.current = session;
-      } catch (e) {
-        console.error('Failed to start voice agent', e);
-        setError('No se pudo iniciar el agente de voz. Asegúrate de permitir el acceso al micrófono.');
-        setIsVoiceAgentActive(false);
-        setAgentStatus('error');
-      }
+      sessionRef.current = session;
+    } catch (e) {
+      console.error('Failed to start voice agent', e);
+      setError(
+        'No se pudo iniciar el agente de voz. Asegúrate de permitir el acceso al micrófono.'
+      );
+      setIsVoiceAgentActive(false);
+      setAgentStatus('error');
     }
   };
 
-  const showSuggestions = !currentConversationId && messages.length <= 1;
+  // ---------- DERIVADOS ----------
+
+  const showSuggestions = useMemo(
+    () => !currentConversationId && messages.length <= 1 && !isLoading,
+    [currentConversationId, messages.length, isLoading]
+  );
+
+  // ---------- RENDER ----------
 
   return (
     <div className="app-shell">
       <div className="flex h-screen text-slate-100 overflow-hidden">
+        {/* Sidebar solo en vista de chat */}
         {currentView === 'chat' && (
           <ConversationHistory
             conversations={conversations}
@@ -322,24 +376,26 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
           />
         )}
 
-        <div className="flex flex-col flex-grow relative">
+        <div className="flex flex-col grow relative">
           <Header
             user={user}
             onLogout={onLogout}
             currentView={currentView}
-            onNavigate={setCurrentView}
+            onNavigate={(view: View) => setCurrentView(view)}
           />
 
           {currentView === 'chat' && (
             <>
               <ChatWindow messages={messages} isLoading={isLoading} />
+
               {error && (
                 <div className="px-4 py-2 text-center text-red-400 bg-red-900/30">
                   {error}
                 </div>
               )}
+
               <div className="bg-slate-950/70 border-t border-slate-800">
-                {showSuggestions && !isLoading && (
+                {showSuggestions && (
                   <SuggestedPrompts onSendMessage={handleSendMessage} />
                 )}
                 <ChatInput
@@ -356,14 +412,6 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
             <div className="p-4 sm:p-6">
               <div className="glass-panel p-4 sm:p-6">
                 <AccountDashboard user={user} plan={plan} />
-              </div>
-            </div>
-          )}
-
-          {currentView === 'admin' && (
-            <div className="p-4 sm:p-6">
-              <div className="glass-panel p-4 sm:p-6">
-                <AdminDashboard user={user} />
               </div>
             </div>
           )}

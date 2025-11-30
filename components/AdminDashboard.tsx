@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { User } from '../types';
 
-const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL as string | undefined;
+const ADMIN_EMAIL = 'madmin@chatmig.com';
 
 interface AdminDashboardProps {
   user: User;
@@ -50,19 +50,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
   const [subscriptions, setSubscriptions] = useState<SubscriptionRow[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
 
-  // 🔥 NUEVO: vista agregada de usuarios
   const [userRows, setUserRows] = useState<AdminUserRow[]>([]);
   const [userSearch, setUserSearch] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
 
-  const isAdmin = useMemo(
-    () => !!ADMIN_EMAIL && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase(),
-    [user.email]
-  );
+  const isAdmin = user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -70,33 +67,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
     setInfo('');
 
     try {
-      // 1) Métricas + datos para tablas + datos agregados de usuarios
-      const [
-        paymentsAgg,
-        paymentsCount,
-        activePremiumCount,
-        conversationsCount,
-        recentSubs,
-        recentPays,
-        allSubs,
-        allPays,
-        allConvs,
-      ] = await Promise.all([
-        supabase
-          .from('payments')
-          .select('sum:amount', { head: false })
-          .eq('status', 'paid')
-          .single(),
-        supabase
-          .from('payments')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'paid'),
-        supabase
-          .from('subscriptions')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'active')
-          .eq('plan', 'premium'),
-        supabase.from('conversations').select('*', { count: 'exact', head: true }),
+      const [recentSubs, recentPays, allSubs, allPays, allConvs] = await Promise.all([
         supabase
           .from('subscriptions')
           .select(
@@ -111,7 +82,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
           )
           .order('created_at', { ascending: false })
           .limit(20),
-        // para vista agregada de usuarios
         supabase
           .from('subscriptions')
           .select('user_email, plan, status, created_at'),
@@ -123,106 +93,109 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
           .select('user_email, created_at'),
       ]);
 
-      const totalRevenue = (paymentsAgg.data as any)?.sum ?? 0;
-
-      setOverview({
-        totalRevenue: Number(totalRevenue) || 0,
-        totalPayments: paymentsCount.count || 0,
-        activePremium: activePremiumCount.count || 0,
-        totalConversations: conversationsCount.count || 0,
-      });
-
-      if (recentSubs.error) {
-        console.error('Error loading subscriptions:', recentSubs.error);
-      } else {
+      if (!recentSubs.error) {
         setSubscriptions((recentSubs.data as SubscriptionRow[]) || []);
       }
-
-      if (recentPays.error) {
-        console.error('Error loading payments:', recentPays.error);
-      } else {
+      if (!recentPays.error) {
         setPayments((recentPays.data as PaymentRow[]) || []);
       }
 
-      // 🔥 NUEVO: construir vista agregada de usuarios
       if (allSubs.error) throw allSubs.error;
       if (allPays.error) throw allPays.error;
       if (allConvs.error) throw allConvs.error;
 
       const byEmail = new Map<string, AdminUserRow>();
 
-      // Suscripciones
+      let totalRevenue = 0;
+      let totalPayments = 0;
+      let activePremium = 0;
+      const totalConversations = (allConvs.data || []).length;
+
       (allSubs.data || []).forEach((s: any) => {
         const email = s.user_email as string;
         if (!email) return;
 
-        const existing = byEmail.get(email) || {
-          email,
-          currentPlan: null,
-          lastActivity: null,
-          totalPayments: 0,
-          totalPaidUsd: 0,
-        };
+        let row = byEmail.get(email);
+        if (!row) {
+          row = {
+            email,
+            currentPlan: null,
+            lastActivity: null,
+            totalPayments: 0,
+            totalPaidUsd: 0,
+          };
+          byEmail.set(email, row);
+        }
 
         if (s.status === 'active') {
-          existing.currentPlan = s.plan;
+          row.currentPlan = s.plan;
+          if (s.plan === 'premium') activePremium += 1;
         }
 
-        if (!existing.lastActivity || s.created_at > existing.lastActivity) {
-          existing.lastActivity = s.created_at;
+        if (!row.lastActivity || s.created_at > row.lastActivity) {
+          row.lastActivity = s.created_at;
         }
-
-        byEmail.set(email, existing);
       });
 
-      // Pagos
       (allPays.data || []).forEach((p: any) => {
         const email = p.user_email as string;
         if (!email) return;
 
-        const existing = byEmail.get(email) || {
-          email,
-          currentPlan: null,
-          lastActivity: null,
-          totalPayments: 0,
-          totalPaidUsd: 0,
-        };
+        let row = byEmail.get(email);
+        if (!row) {
+          row = {
+            email,
+            currentPlan: null,
+            lastActivity: null,
+            totalPayments: 0,
+            totalPaidUsd: 0,
+          };
+          byEmail.set(email, row);
+        }
 
         if (p.status === 'paid') {
-          existing.totalPayments += 1;
-          if (p.currency === 'USD' && typeof p.amount === 'number') {
-            existing.totalPaidUsd += p.amount;
-          } else if (p.currency === 'USD' && typeof p.amount === 'string') {
-            const num = parseFloat(p.amount);
-            if (!Number.isNaN(num)) existing.totalPaidUsd += num;
+          totalPayments += 1;
+
+          if (p.currency === 'USD') {
+            let amountNum = 0;
+            if (typeof p.amount === 'number') {
+              amountNum = p.amount;
+            } else if (typeof p.amount === 'string') {
+              const parsed = parseFloat(p.amount);
+              if (!Number.isNaN(parsed)) amountNum = parsed;
+            }
+
+            if (amountNum > 0) {
+              totalRevenue += amountNum;
+              row.totalPaidUsd += amountNum;
+            }
           }
         }
 
-        if (!existing.lastActivity || p.created_at > existing.lastActivity) {
-          existing.lastActivity = p.created_at;
+        if (!row.lastActivity || p.created_at > row.lastActivity) {
+          row.lastActivity = p.created_at;
         }
-
-        byEmail.set(email, existing);
       });
 
-      // Conversaciones
       (allConvs.data || []).forEach((c: any) => {
         const email = c.user_email as string;
         if (!email) return;
 
-        const existing = byEmail.get(email) || {
-          email,
-          currentPlan: null,
-          lastActivity: null,
-          totalPayments: 0,
-          totalPaidUsd: 0,
-        };
-
-        if (!existing.lastActivity || c.created_at > existing.lastActivity) {
-          existing.lastActivity = c.created_at;
+        let row = byEmail.get(email);
+        if (!row) {
+          row = {
+            email,
+            currentPlan: null,
+            lastActivity: null,
+            totalPayments: 0,
+            totalPaidUsd: 0,
+          };
+          byEmail.set(email, row);
         }
 
-        byEmail.set(email, existing);
+        if (!row.lastActivity || c.created_at > row.lastActivity) {
+          row.lastActivity = c.created_at;
+        }
       });
 
       const usersArr = Array.from(byEmail.values()).sort((a, b) => {
@@ -232,6 +205,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
       });
 
       setUserRows(usersArr);
+
+      setOverview({
+        totalRevenue,
+        totalPayments,
+        activePremium,
+        totalConversations,
+      });
     } catch (err) {
       console.error('Admin load error:', err);
       setError('Ocurrió un error al cargar los datos de administración.');
@@ -256,6 +236,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
     setUpdatingId(id);
     setError('');
     setInfo('');
+
     try {
       const { error } = await supabase
         .from('subscriptions')
@@ -279,9 +260,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
     }
   };
 
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-
-  // 🔥 NUEVO: enviar email de reset de contraseña
   const handleSendReset = async (email: string) => {
     setError('');
     setInfo('');
@@ -302,7 +280,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
     }
   };
 
-  // 🔥 NUEVO: borrar data de negocio de un usuario
   const handleDeleteUserData = async (email: string) => {
     const ok = window.confirm(
       `⚠️ Vas a borrar TODAS las conversaciones, mensajes, suscripciones y pagos asociados a ${email}.\nEsto NO borra la cuenta de autenticación en Supabase.\n\n¿Seguro?`
@@ -361,12 +338,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
 
   if (!isAdmin) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="bg-yellow-100 text-yellow-800 px-4 py-3 rounded-lg text-center max-w-md">
+      <div className="flex h-full items-center justify-center bg-black text-gray-100">
+        <div className="bg-neutral-900 text-yellow-300 px-4 py-3 rounded-lg text-center max-w-md border border-yellow-700/50">
           <p className="font-semibold mb-1">Acceso restringido</p>
           <p className="text-sm">
-            Esta sección es solo para el dueño de la plataforma. Inicia sesión con el correo
-            admin configurado en <code>VITE_ADMIN_EMAIL</code>.
+            Esta sección es solo para el dueño de la plataforma. Inicia sesión con{' '}
+            <code className="text-yellow-200">{ADMIN_EMAIL}</code>.
           </p>
         </div>
       </div>
@@ -374,18 +351,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    <div className="h-full overflow-y-auto bg-black text-gray-100">
       <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
         <div className="flex justify-between items-center">
           <div>
             <h2 className="text-2xl font-bold mb-1">Panel de Administración</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-gray-400">
               Controla usuarios de pago, suscripciones y actividad de ChatMig.
             </p>
           </div>
           <button
             onClick={loadData}
-            className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-400"
+            className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-500 disabled:bg-blue-900/60"
             disabled={loading}
           >
             {loading ? 'Actualizando...' : 'Actualizar'}
@@ -393,22 +370,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
         </div>
 
         {error && (
-          <div className="bg-red-100 text-red-800 px-4 py-2 rounded-md text-sm">
+          <div className="bg-red-900/40 text-red-200 px-4 py-2 rounded-md text-sm border border-red-700/60">
             {error}
           </div>
         )}
         {info && !error && (
-          <div className="bg-emerald-100 text-emerald-800 px-4 py-2 rounded-md text-sm">
+          <div className="bg-emerald-900/40 text-emerald-200 px-4 py-2 rounded-md text-sm border border-emerald-700/60">
             {info}
           </div>
         )}
 
-        {/* 🔥 NUEVO: Vista agregada de usuarios */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 space-y-3">
+        {/* Usuarios agregados */}
+        <div className="bg-neutral-900 rounded-xl shadow border border-gray-800 p-4 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <h3 className="font-semibold">Usuarios</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
+              <p className="text-xs text-gray-400">
                 Resumen por email: plan, actividad y pagos.
               </p>
             </div>
@@ -418,26 +395,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                 placeholder="Buscar por email..."
                 value={userSearch}
                 onChange={e => setUserSearch(e.target.value)}
-                className="w-full sm:w-72 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full sm:w-72 px-3 py-2 rounded-md border border-gray-700 bg-black text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <span className="text-xs text-gray-500 dark:text-gray-400">
+              <span className="text-xs text-gray-400">
                 Usuarios únicos: {userRows.length}
               </span>
             </div>
           </div>
 
           {loading && userRows.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Cargando usuarios...
-            </p>
+            <p className="text-sm text-gray-400">Cargando usuarios...</p>
           ) : filteredUserRows.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-gray-400">
               No hay usuarios que coincidan con el filtro.
             </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="text-left text-xs text-gray-500 border-b border-gray-200 dark:border-gray-700">
+                <thead className="text-left text-xs text-gray-400 border-b border-gray-800 bg-black/40">
                   <tr>
                     <th className="py-2 pr-3">Email</th>
                     <th className="py-2 pr-3">Plan</th>
@@ -450,13 +425,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                   {filteredUserRows.map(row => (
                     <tr
                       key={row.email}
-                      className="border-b border-gray-100 dark:border-gray-800"
+                      className="border-b border-gray-800 bg-black/40"
                     >
-                      <td className="py-2 pr-3 truncate max-w-[220px]">{row.email}</td>
+                      <td className="py-2 pr-3 truncate max-w-[220px]">
+                        {row.email}
+                      </td>
                       <td className="py-2 pr-3 capitalize">
                         {row.currentPlan || 'sin plan'}
                       </td>
-                      <td className="py-2 pr-3 text-xs text-gray-500 dark:text-gray-400">
+                      <td className="py-2 pr-3 text-xs text-gray-400">
                         {row.lastActivity
                           ? new Date(row.lastActivity).toLocaleString()
                           : '—'}
@@ -470,7 +447,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                         <button
                           onClick={() => handleSendReset(row.email)}
                           disabled={actionLoading === `reset:${row.email}`}
-                          className="px-2 py-1 rounded-md text-xs bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-400"
+                          className="px-2 py-1 rounded-md text-xs bg-blue-600 text-white hover:bg-blue-500 disabled:bg-blue-900/60"
                         >
                           {actionLoading === `reset:${row.email}`
                             ? 'Enviando...'
@@ -479,7 +456,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                         <button
                           onClick={() => handleDeleteUserData(row.email)}
                           disabled={actionLoading === `delete:${row.email}`}
-                          className="px-2 py-1 rounded-md text-xs bg-red-600 text-white hover:bg-red-700 disabled:bg-red-400"
+                          className="px-2 py-1 rounded-md text-xs bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900/60"
                         >
                           {actionLoading === `delete:${row.email}`
                             ? 'Borrando...'
@@ -493,28 +470,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
             </div>
           )}
 
-          <p className="text-[11px] text-gray-400 mt-1">
+          <p className="text-[11px] text-gray-500 mt-1">
             ⚠️ Este panel borra solo datos de negocio (conversaciones, mensajes, suscripciones y pagos).
             La cuenta de autenticación (Auth) se gestiona desde el dashboard de Supabase.
           </p>
         </div>
 
-        {/* Métricas principales (tu bloque original) */}
+        {/* Métricas principales */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
-            <p className="text-xs uppercase text-gray-500 dark:text-gray-400 mb-1">
+          <div className="bg-neutral-900 rounded-xl shadow border border-gray-800 p-4">
+            <p className="text-xs uppercase text-gray-400 mb-1">
               Ingresos totales
             </p>
             <p className="text-2xl font-bold">
               {overview ? `$${overview.totalRevenue.toFixed(2)} USD` : '—'}
             </p>
-            <p className="text-xs text-gray-400 mt-1">
-              Basado en pagos con estado <span className="font-semibold">paid</span>.
+            <p className="text-xs text-gray-500 mt-1">
+              Basado en pagos con estado <span className="font-semibold">paid</span> y moneda USD.
             </p>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
-            <p className="text-xs uppercase text-gray-500 dark:text-gray-400 mb-1">
+          <div className="bg-neutral-900 rounded-xl shadow border border-gray-800 p-4">
+            <p className="text-xs uppercase text-gray-400 mb-1">
               Pagos procesados
             </p>
             <p className="text-2xl font-bold">
@@ -522,8 +499,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
             </p>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
-            <p className="text-xs uppercase text-gray-500 dark:text-gray-400 mb-1">
+          <div className="bg-neutral-900 rounded-xl shadow border border-gray-800 p-4">
+            <p className="text-xs uppercase text-gray-400 mb-1">
               Usuarios Premium activos
             </p>
             <p className="text-2xl font-bold">
@@ -531,8 +508,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
             </p>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
-            <p className="text-xs uppercase text-gray-500 dark:text-gray-400 mb-1">
+          <div className="bg-neutral-900 rounded-xl shadow border border-gray-800 p-4">
+            <p className="text-xs uppercase text-gray-400 mb-1">
               Conversaciones totales
             </p>
             <p className="text-2xl font-bold">
@@ -541,21 +518,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
           </div>
         </div>
 
-        {/* Suscripciones recientes (tu bloque original) */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
+        {/* Suscripciones recientes */}
+        <div className="bg-neutral-900 rounded-xl shadow border border-gray-800 p-4">
           <div className="flex justify-between items-center mb-3">
             <h3 className="font-semibold">Últimas suscripciones</h3>
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-gray-400">
               Mostrando {subscriptions.length} registros
             </span>
           </div>
 
           {subscriptions.length === 0 ? (
-            <p className="text-sm text-gray-500">Aún no hay suscripciones.</p>
+            <p className="text-sm text-gray-400">
+              Aún no hay suscripciones.
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="text-left text-xs text-gray-500 border-b border-gray-200 dark:border-gray-700">
+                <thead className="text-left text-xs text-gray-400 border-b border-gray-800 bg-black/40">
                   <tr>
                     <th className="py-2 pr-3">Usuario</th>
                     <th className="py-2 pr-3">Plan</th>
@@ -569,13 +548,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                   {subscriptions.map(sub => (
                     <tr
                       key={sub.id}
-                      className="border-b border-gray-100 dark:border-gray-800"
+                      className="border-b border-gray-800 bg-black/40"
                     >
                       <td className="py-2 pr-3">{sub.user_email}</td>
                       <td className="py-2 pr-3 capitalize">{sub.plan}</td>
                       <td className="py-2 pr-3 text-xs">
-                        {sub.provider} <br />
-                        <span className="text-gray-400">
+                        {sub.provider}
+                        <br />
+                        <span className="text-gray-500">
                           {sub.provider_subscription_id}
                         </span>
                       </td>
@@ -584,16 +564,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                           className={
                             'px-2 py-0.5 rounded-full text-xs ' +
                             (sub.status === 'active'
-                              ? 'bg-green-100 text-green-700'
+                              ? 'bg-green-900/40 text-green-300'
                               : sub.status === 'canceled'
-                              ? 'bg-red-100 text-red-700'
-                              : 'bg-gray-100 text-gray-700')
+                              ? 'bg-red-900/40 text-red-300'
+                              : 'bg-gray-800 text-gray-200')
                           }
                         >
                           {sub.status}
                         </span>
                       </td>
-                      <td className="py-2 pr-3 text-xs text-gray-500">
+                      <td className="py-2 pr-3 text-xs text-gray-400">
                         {new Date(sub.created_at).toLocaleString()}
                       </td>
                       <td className="py-2 pr-3 space-x-2">
@@ -603,7 +583,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                               handleUpdateSubscriptionStatus(sub.id, 'active')
                             }
                             disabled={updatingId === sub.id}
-                            className="text-xs px-2 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:bg-green-400"
+                            className="text-xs px-2 py-1 rounded bg-green-600 text-white hover:bg-green-500 disabled:bg-green-900/60"
                           >
                             {updatingId === sub.id ? '...' : 'Activar'}
                           </button>
@@ -614,7 +594,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                               handleUpdateSubscriptionStatus(sub.id, 'canceled')
                             }
                             disabled={updatingId === sub.id}
-                            className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700 disabled:bg-red-400"
+                            className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900/60"
                           >
                             {updatingId === sub.id ? '...' : 'Cancelar'}
                           </button>
@@ -628,21 +608,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
           )}
         </div>
 
-        {/* Pagos recientes (tu bloque original) */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
+        {/* Pagos recientes */}
+        <div className="bg-neutral-900 rounded-xl shadow border border-gray-800 p-4">
           <div className="flex justify-between items-center mb-3">
             <h3 className="font-semibold">Pagos recientes</h3>
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-gray-400">
               Mostrando {payments.length} registros
             </span>
           </div>
 
           {payments.length === 0 ? (
-            <p className="text-sm text-gray-500">Aún no hay pagos registrados.</p>
+            <p className="text-sm text-gray-400">
+              Aún no hay pagos registrados.
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="text-left text-xs text-gray-500 border-b border-gray-200 dark:border-gray-700">
+                <thead className="text-left text-xs text-gray-400 border-b border-gray-800 bg-black/40">
                   <tr>
                     <th className="py-2 pr-3">Usuario</th>
                     <th className="py-2 pr-3">Monto</th>
@@ -655,7 +637,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                   {payments.map(pay => (
                     <tr
                       key={pay.id}
-                      className="border-b border-gray-100 dark:border-gray-800"
+                      className="border-b border-gray-800 bg-black/40"
                     >
                       <td className="py-2 pr-3">{pay.user_email}</td>
                       <td className="py-2 pr-3">
@@ -666,10 +648,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                           className={
                             'px-2 py-0.5 rounded-full text-xs ' +
                             (pay.status === 'paid'
-                              ? 'bg-green-100 text-green-700'
+                              ? 'bg-green-900/40 text-green-300'
                               : pay.status === 'failed'
-                              ? 'bg-red-100 text-red-700'
-                              : 'bg-gray-100 text-gray-700')
+                              ? 'bg-red-900/40 text-red-300'
+                              : 'bg-gray-800 text-gray-200')
                           }
                         >
                           {pay.status}
@@ -678,11 +660,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                       <td className="py-2 pr-3 text-xs">
                         {pay.provider}
                         <br />
-                        <span className="text-gray-400">
+                        <span className="text-gray-500">
                           {pay.provider_subscription_id}
                         </span>
                       </td>
-                      <td className="py-2 pr-3 text-xs text-gray-500">
+                      <td className="py-2 pr-3 text-xs text-gray-400">
                         {new Date(pay.created_at).toLocaleString()}
                       </td>
                     </tr>

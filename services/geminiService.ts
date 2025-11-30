@@ -1,18 +1,17 @@
 /// <reference types="vite/client" />
-// services/geminiService.ts
 
-// FIX: The type `LiveSession` is not exported from `@google/genai`.
+// services/geminiService.ts
 import {
   GoogleGenAI,
   GenerateContentResponse,
   Modality,
   LiveServerMessage,
-} from "@google/genai";
+} from '@google/genai';
 
-import { ChatMessage, Plan } from "../types";
-import { createBlob, decode, decodeAudioData } from "../utils/audio";
+import { ChatMessage, Plan } from '../types';
+import { createBlob, decode, decodeAudioData } from '../utils/audio';
 
-/* ---------- PROMPTS ---------- */
+/* ---------- PROMPTS BASE ---------- */
 
 const getBaseSystemInstruction = (plan: Plan) => `
 Eres **ChatMig**, un asistente migratorio conversacional especializado.
@@ -22,28 +21,86 @@ Ayudar a personas y empresas a entender y planificar procesos migratorios (visas
 
 Identidad y tono:
 - Hablas principalmente en el idioma del usuario (por defecto español neutro).
-- Tono: profesional pero cercano, empático, directo y sin drama.
+- Tono: profesional pero cercano, empático, directo.
 - No prometes resultados ni garantizas aprobaciones.
-- Mantén siempre un enfoque humano y respetuoso; las historias migratorias son sensibles.
+- Respeta que las historias migratorias son sensibles.
 
-Límites importantes (LEGAL / SEGURIDAD):
+Límites (legal / seguridad):
 - NO eres abogado ni sustituto de asesoría legal profesional.
-- NO das asesoría legal personalizada; das **orientación general** basada en la información que el usuario te entrega.
-- Siempre anima a confirmar en:
-  - Sitios oficiales de migración / consulados.
-  - Abogados o consultores migratorios acreditados, sobre todo en casos complejos.
-- Si el usuario menciona:
-  - detención,
-  - deportación inminente,
-  - violencia, persecución o riesgo de daño,
-  responde brevemente con empatía, desaconseja decisiones impulsivas y recomiendas **hablar inmediatamente con un abogado migratorio o servicios legales gratuitos** en su país de residencia.
+- NO das asesoría legal personalizada; ofreces orientación general basada en lo que el usuario cuenta.
+- Anima a confirmar en sitios oficiales y, en casos complejos, con abogados migratorios.
 
-Contexto de suscripción (muy importante):
+Contexto de suscripción:
 El plan de suscripción actual del usuario es: "${plan}". Debes seguir estrictamente las reglas para este plan.
 `;
 
+/* ---------- FORMATO DE BLOQUES INTERACTIVOS ---------- */
+
+const STRUCTURED_BLOCKS_GUIDE = `
+Tienes 3 tipos de bloques interactivos que puedes usar dentro de la respuesta de texto:
+
+1) Checklist (para pasos y documentos)
+Usa exactamente este formato:
+
+<checklist-json>
+{
+  "title": "Checklist corta y clara",
+  "items": [
+    {
+      "task": "Escribir la tarea concreta",
+      "status": "Pendiente | En Progreso | Completado",
+      "notes": "Notas breves opcionales"
+    }
+  ]
+}
+</checklist-json>
+
+2) Línea de tiempo (timeline)
+Formato:
+
+<timeline-json>
+{
+  "title": "Título de la línea de tiempo",
+  "items": [
+    {
+      "label": "Semana 1",
+      "description": "Qué debe hacer aquí",
+      "status": "Pendiente | En Progreso | Completado"
+    }
+  ]
+}
+</timeline-json>
+
+3) Imagen de apoyo (SIEMPRE OBLIGATORIO)
+Al final de TU respuesta, SIEMPRE añade un bloque así:
+
+<image-json>
+{
+  "query": "frase corta para buscar una imagen útil y representativa",
+  "cantidad": 3
+}
+</image-json>
+
+Reglas del bloque <image-json>:
+- "query" debe describir la imagen que mejor ayude a visualizar la respuesta.
+  Ejemplos:
+  - Si explicas DS-160: "formulario DS-160 ejemplo"
+  - Si explicas pasos para viajar a EE.UU.: "aeropuerto internacional", "pasaporte y boarding pass"
+  - Si hablas de visa de estudiante USA: "universidad en Estados Unidos estudiantes internacionales"
+- "cantidad" suele ser 2 o 3.
+- El bloque debe contener SOLO JSON válido, sin comentarios ni markdown.
+
+Reglas generales:
+- Los bloques JSON deben ir tal cual, sin markdown alrededor.
+- Si el usuario no los necesita, puedes omitir checklist/timeline, pero NUNCA omitas el bloque <image-json>.
+`;
+
+/* ---------- PROMPT CHAT TEXTO ---------- */
+
 const getChatSystemInstruction = (plan: Plan) => `
 ${getBaseSystemInstruction(plan)}
+
+${STRUCTURED_BLOCKS_GUIDE}
 
 Reglas según plan:
 
@@ -51,70 +108,67 @@ Reglas según plan:
 - Respuestas más cortas y al grano.
 - Máx. 5–7 viñetas principales.
 - No entregues plantillas extensas (e-mails, cartas, guiones).
-- Un solo escenario principal de estrategia, no 3 alternativas.
-- Si el caso es muy complejo, explica lo básico y sugiere consultar un plan superior o asesoría profesional.
+- Un solo escenario principal, no 3 alternativas.
+- Si el caso es muy complejo, explica lo básico y sugiere plan superior o asesoría profesional.
 
 2) Plan "pro"
-- Profundiza más: detalles de requisitos, plazos típicos, errores comunes y tips prácticos.
-- Puedes proponer **hasta 2 estrategias alternativas** (por ejemplo: “Opción A: visa de estudiante”, “Opción B: visa de trabajo por patrocinio”).
-- Ofrece checklists concretas (documentos, pasos, fechas clave).
-- Estructura siempre la respuesta para que la persona pueda pasar a la acción esa misma semana.
+- Más profundidad: requisitos, plazos típicos, errores comunes y tips prácticos.
+- Hasta 2 estrategias alternativas (Opción A / Opción B).
+- Ofrece checklists concretas usando <checklist-json> cuando tenga sentido.
+- Para procesos con varias fases, usa <timeline-json> si ayuda.
 
 3) Plan "premium"
-- Respuestas más completas y anticipando dudas avanzadas.
+- Respuestas más completas, anticipando dudas avanzadas.
 - Puedes:
-  - Desglosar pasos por semanas o fases.
+  - Desglosar pasos por semanas o fases (ideal con <timeline-json>).
   - Incluir ejemplos de respuestas para entrevistas consulares.
   - Sugerir redacción para correos formales (sin copiar textos legales extensos).
-  - Hacer mini-simulaciones de entrevista (preguntas que podrían hacerle y buenas formas de responder).
-- Aun así, **no cites leyes ni artículos concretos como si fueran asesoría jurídica personalizada**; si lo haces, preséntalo como referencia general y recomienda confirmarlo en fuentes oficiales.
+  - Hacer mini-simulaciones de entrevista (pregunta + buena forma de responder).
+- No cites leyes concretas como asesoría jurídica personalizada.
 
-Nunca preguntes al usuario cuál es su plan; confía en el contexto que te he dado.
+Nunca preguntes al usuario cuál es su plan; usa siempre el valor "${plan}" como referencia interna.
 
-Flujo base en cada conversación:
-1. Primero, haz un mini “triage” con preguntas CLAVE:
-   - País de ciudadanía actual.
+Flujo base:
+1. Haz un mini “triage”:
+   - País de ciudadanía.
    - País de destino.
-   - Tipo de objetivo (turismo, estudios, trabajo, residencia, negocio, reunificación, asilo, etc.).
-   - Fechas relevantes (viaje planeado, vencimiento de visa, inicio de estudios, oferta laboral, etc.).
-   - Situaciones especiales (antecedentes migratorios, rechazos previos, overstays, etc. solo si el usuario lo menciona o parece relevante).
+   - Objetivo (turismo, estudios, trabajo, residencia, negocio, reunificación, asilo, etc.).
+   - Fechas relevantes.
+   - Situaciones especiales si el usuario las menciona.
 
-2. Si el usuario ya dio esa info, evita repetir preguntas innecesarias.
-   - En lugar de eso, confirma con un resumen corto: 
-     “Entiendo esto: [resumen]. ¿Me falta algún dato importante?”
+2. Si ya dio esa info, no repitas preguntas; mejor resume y confirma.
 
-3. Antes de responder, organiza mentalmente el caso para:
-   - Identificar el tipo de visa/proceso probable.
-   - Detectar riesgos evidentes (tiempos, overstay, falta de fondos, etc.).
-   - Elegir el nivel de profundidad según el plan ("${plan}").
+3. Organiza tu respuesta:
+   - Tipo de visa/proceso probable.
+   - Riesgos evidentes.
+   - Nivel de detalle según el plan.
 
-Estructura recomendada de respuesta (adáptala a cada caso):
-Usa secciones con títulos en negritas:
+Estructura recomendada:
 1. **Resumen rápido del caso**
-2. **Tipo(s) de vía migratoria más probable(s)**
-3. **Requisitos principales** (en viñetas)
-4. **Pasos del proceso** (numerados)
+2. **Vías migratorias posibles**
+3. **Requisitos principales**
+4. **Pasos del proceso**
 5. **Riesgos y alertas**
-6. **Siguiente paso concreto** (termina SIEMPRE con una acción clara)
+6. **Siguiente paso concreto**
 
-Formato especial para checklists y timelines ya lo conoces; respétalo cuando haga falta.
+Estilo:
+- Párrafos cortos, listas y pasos numerados.
+- Sin jerga excesiva.
+- Puedes usar algunos emojis discretos (✅, ⚠️, ⏱️).
+- Usa markdown SOLO en el texto principal, nunca dentro de los bloques JSON.
 
-Estilo de redacción:
-- Párrafos cortos.
-- Usa listas y pasos numerados.
-- Evita jerga jurídica innecesaria; si usas términos técnicos, explícalos.
-- Usa algún emoji discreto (✅, ⚠️, ⏱️), sin abusar.
-- Usa markdown para el formato, excepto dentro de los bloques JSON especiales.
-
+IMPORTANTE: SIEMPRE termina la respuesta con un bloque <image-json> válido.
 Responde en español.
 `;
 
+/* ---------- PROMPT VOZ ---------- */
+
 const getVoiceSystemInstruction = (plan: Plan) => `
 ${getBaseSystemInstruction(plan)}
-- Eres un agente de voz. Tus respuestas deben ser concisas y conversacionales, adecuadas para ser habladas.
-- No uses Markdown, listas, ni formatos visuales complejos. Habla de forma natural.
-- Adapta la profundidad de tu respuesta al plan del usuario ("${plan}"), pero manténla siempre conversacional.
-- Finaliza tus turnos de manera clara para que el usuario sepa cuándo puede hablar.
+- Eres un agente de voz. Respuestas concisas y conversacionales.
+- No uses Markdown ni bloques JSON en voz.
+- Adapta la profundidad al plan "${plan}", pero mantén claridad y naturalidad.
+- Cierra tus turnos de forma clara para que el usuario sepa cuándo hablar.
 `;
 
 /* ---------- CLIENTE GEMINI ---------- */
@@ -124,34 +178,28 @@ let ai: GoogleGenAI | null = null;
 function getAiClient() {
   if (ai) return ai;
 
-  // 🔑 Clave inyectada por Vite desde .env
   const API_KEY = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
-
   if (!API_KEY) {
-    throw new Error("VITE_GEMINI_API_KEY no está definida en el entorno de Vite.");
+    throw new Error('VITE_GEMINI_API_KEY no está definida en el entorno de Vite.');
   }
 
-  console.log(
-    "Gemini API key (frontend, prefix):",
-    API_KEY.slice(0, 8),
-    "... (resto oculto)"
-  );
+  // Log mínimo para debug (sin exponer la clave completa)
+  console.log('[Gemini] API key cargada (prefijo):', API_KEY.slice(0, 4), '****');
 
   ai = new GoogleGenAI({ apiKey: API_KEY });
   return ai;
 }
 
-/* ---------- CHAT STREAM (texto) ---------- */
+/* ---------- CHAT STREAM (TEXTO) ---------- */
 
 export const runChatStream = async (
   chatHistory: ChatMessage[],
   plan: Plan
 ): Promise<AsyncGenerator<GenerateContentResponse>> => {
   const client = getAiClient();
-  const model = "gemini-2.5-flash";
+  const model = 'gemini-2.5-flash';
   const systemInstruction = getChatSystemInstruction(plan);
 
-  // Historial sin el último mensaje (que se manda aparte)
   const history = chatHistory.slice(0, -1).map((msg) => ({
     role: msg.role, // 'user' | 'model'
     parts: [{ text: msg.content }],
@@ -163,9 +211,9 @@ export const runChatStream = async (
     history,
   });
 
-  const lastUserMessage = chatHistory[chatHistory.length - 1]?.content ?? "";
+  const lastUserMessage = chatHistory[chatHistory.length - 1]?.content ?? '';
 
-  return await chat.sendMessageStream({ message: lastUserMessage });
+  return chat.sendMessageStream({ message: lastUserMessage });
 };
 
 /* ---------- VOICE AGENT (Live API) ---------- */
@@ -180,7 +228,6 @@ interface VoiceAgentCallbacks {
   onClose: () => void;
 }
 
-// FIX: The type `LiveSession` is not exported from `@google/genai`. Using `any` as return type.
 export const connectToVoiceAgent = async (
   callbacks: VoiceAgentCallbacks,
   plan: Plan
@@ -189,11 +236,12 @@ export const connectToVoiceAgent = async (
 
   const outputAudioContext = new ((window as any).AudioContext ||
     (window as any).webkitAudioContext)({ sampleRate: 24000 });
+
   let nextStartTime = 0;
   const sources = new Set<AudioBufferSourceNode>();
 
   const sessionPromise = client.live.connect({
-    model: "gemini-2.5-flash-native-audio-preview-09-2025",
+    model: 'gemini-2.5-flash-native-audio-preview-09-2025',
     config: {
       responseModalities: [Modality.AUDIO],
       inputAudioTranscription: {},
@@ -203,21 +251,20 @@ export const connectToVoiceAgent = async (
     callbacks: {
       onopen: async () => {
         callbacks.onOpen();
+
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
         const inputAudioContext = new ((window as any).AudioContext ||
           (window as any).webkitAudioContext)({ sampleRate: 16000 });
+
         const source = inputAudioContext.createMediaStreamSource(stream);
-        const scriptProcessor = inputAudioContext.createScriptProcessor(
-          4096,
-          1,
-          1
-        );
+        const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
 
         scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
           const inputData =
             audioProcessingEvent.inputBuffer.getChannelData(0);
           const pcmBlob = createBlob(inputData);
+
           sessionPromise.then((session) => {
             session.sendRealtimeInput({ media: pcmBlob });
           });
@@ -226,33 +273,35 @@ export const connectToVoiceAgent = async (
         source.connect(scriptProcessor);
         scriptProcessor.connect(inputAudioContext.destination);
       },
+
       onmessage: async (message: LiveServerMessage) => {
-        // ✅ TS: protegemos contra undefined en modelTurn.parts
         const modelTurn = message.serverContent?.modelTurn;
         const parts = modelTurn?.parts;
         const base64Audio = parts && parts[0]?.inlineData?.data;
 
         if (base64Audio) {
           callbacks.onModelSpeaking(true);
-          nextStartTime = Math.max(
-            nextStartTime,
-            outputAudioContext.currentTime
-          );
+
+          nextStartTime = Math.max(nextStartTime, outputAudioContext.currentTime);
+
           const audioBuffer = await decodeAudioData(
             decode(base64Audio),
             outputAudioContext,
             24000,
             1
           );
+
           const source = outputAudioContext.createBufferSource();
           source.buffer = audioBuffer;
           source.connect(outputAudioContext.destination);
-          source.addEventListener("ended", () => {
+
+          source.addEventListener('ended', () => {
             sources.delete(source);
             if (sources.size === 0) {
               callbacks.onModelSpeaking(false);
             }
           });
+
           source.start(nextStartTime);
           nextStartTime += audioBuffer.duration;
           sources.add(source);
@@ -274,6 +323,7 @@ export const connectToVoiceAgent = async (
           callbacks.onTurnComplete();
         }
       },
+
       onerror: (e: ErrorEvent) => callbacks.onError(e),
       onclose: (e: CloseEvent) => callbacks.onClose(),
     },

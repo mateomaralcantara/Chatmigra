@@ -5,6 +5,7 @@ import { ChatMessage } from '../types';
 import LoadingSpinner from './LoadingSpinner';
 import Checklist from './Checklist';
 import Timeline from './Timeline';
+import ImageSupport from './ImageSupport';
 
 interface MessageProps {
   message: ChatMessage;
@@ -12,6 +13,7 @@ interface MessageProps {
 
 const Message: React.FC<MessageProps> = ({ message }) => {
   const isModel = message.role === 'model';
+  const content = message.content || '';
 
   const containerClasses = isModel
     ? 'self-start flex items-end space-x-3'
@@ -38,8 +40,8 @@ const Message: React.FC<MessageProps> = ({ message }) => {
           strokeLinecap="round"
           strokeLinejoin="round"
         >
-          <path d="M2 12h20M12 2a10 10 0 0 1 10 10c0 3.87-2.14 7.25-5.28 8.94M12 2a10 10 0 0 0-10 10c0 3.87 2.14 7.25-5.28 8.94" />
-          <path d="M12 22a10 10 0 0 1-10-10c0-3.87 2.14-7.25 5.28-8.94" />
+          <path d="M2 12h20M12 2a10 10 0 0 1 10 10c0 3.87-2.14 7.25-5.28 8.94M12 2a10 10 0 0 0-10 10c0 3.87-2.14 7.25-5.28 8.94" />
+          <path d="M12 22a10 10 0 0 1-10-10c0-3.87-2.14-7.25-5.28-8.94" />
           <path d="M12 22a10 10 0 0 0 10-10c0-3.87-2.14-7.25-5.28-8.94" />
         </svg>
       ) : (
@@ -60,14 +62,12 @@ const Message: React.FC<MessageProps> = ({ message }) => {
   );
 
   const renderContent = () => {
-    const content = message.content;
-    const regex = /(<(checklist-json|timeline-json)>[\s\S]*?<\/\2>)/g;
-    const parts = content.split(regex).filter((part) => part && part.trim() !== '');
+    // Texto sin bloques especiales
+    const hasSpecialBlocks = /<(checklist-json|timeline-json|image-json)>/.test(
+      content
+    );
 
-    // 💡 Ojo: como regex tiene /g, mejor no usar .test() después
-    const hasSpecialBlocks = regex.exec(content) !== null;
-
-    if (parts.length <= 1 && !hasSpecialBlocks) {
+    if (!hasSpecialBlocks) {
       return (
         <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-2 prose-headings:my-3">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
@@ -75,19 +75,39 @@ const Message: React.FC<MessageProps> = ({ message }) => {
       );
     }
 
+    // Dividimos en texto + bloques especiales
+    const blockRegex =
+      /(<(checklist-json|timeline-json|image-json)>[\s\S]*?<\/\2>)/g;
+
+    const parts = content
+      .split(blockRegex)
+      .filter((part) => part && part.trim() !== '');
+
     return parts.map((part, index) => {
       const isChecklist = part.startsWith('<checklist-json>');
       const isTimeline = part.startsWith('<timeline-json>');
+      const isImage = part.startsWith('<image-json>');
 
-      if (isChecklist || isTimeline) {
+      if (isChecklist || isTimeline || isImage) {
         const jsonRegex =
-          /<(?:checklist-json|timeline-json)>([\s\S]*?)<\/(?:checklist-json|timeline-json)>/;
+          /<(?:checklist-json|timeline-json|image-json)>([\s\S]*?)<\/(?:checklist-json|timeline-json|image-json)>/;
         const match = part.match(jsonRegex);
+
         if (match && match[1]) {
           try {
             const data = JSON.parse(match[1]);
+
             if (isChecklist) return <Checklist key={index} data={data} />;
             if (isTimeline) return <Timeline key={index} data={data} />;
+            if (isImage) {
+              return (
+                <ImageSupport
+                  key={index}
+                  query={data.query}
+                  count={data.cantidad || data.count || 3}
+                />
+              );
+            }
           } catch (e) {
             console.error('Failed to parse JSON content', e);
             return (
@@ -102,6 +122,7 @@ const Message: React.FC<MessageProps> = ({ message }) => {
         }
       }
 
+      // Texto normal entre bloques
       return (
         <div
           key={index}
@@ -117,7 +138,7 @@ const Message: React.FC<MessageProps> = ({ message }) => {
     <div className={containerClasses}>
       {avatar}
       <div className={`p-4 shadow-sm max-w-xl ${bubbleClasses}`}>
-        {isModel && message.content === '' ? <LoadingSpinner /> : renderContent()}
+        {isModel && !content ? <LoadingSpinner /> : renderContent()}
       </div>
     </div>
   );

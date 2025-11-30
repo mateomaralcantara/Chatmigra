@@ -1,3 +1,4 @@
+// src/components/Header.tsx
 import React from 'react';
 import { User } from '../types';
 
@@ -10,101 +11,95 @@ interface HeaderProps {
   onNavigate: (view: View) => void;
 }
 
-const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL as string | undefined;
-
 const Header: React.FC<HeaderProps> = ({ user, onLogout, currentView, onNavigate }) => {
-  const isAdmin =
-    !!ADMIN_EMAIL &&
-    !!user &&
-    user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  const isLoggedIn = !!user;
+
+  const NavButton: React.FC<{
+    active?: boolean;
+    onClick: () => void;
+    children: React.ReactNode;
+  }> = ({ active = false, onClick, children }) => (
+    <button
+      onClick={onClick}
+      className={[
+        'px-3 py-1.5 rounded-md text-sm font-medium',
+        'transition-colors',
+        active
+          ? 'text-blue-400 bg-blue-900/40'
+          : 'text-gray-300 hover:text-blue-400 hover:bg-blue-900/20',
+      ].join(' ')}
+    >
+      {children}
+    </button>
+  );
 
   return (
-    <header
-      className="
-        flex items-center justify-between
-        p-4
-        bg-black
-        border-b border-gray-800
-        shadow-md
-        sticky top-0 z-10
-      "
-    >
-      <div className="flex items-center space-x-3">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className="h-8 w-8 text-blue-500"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M2 12h20M12 2a10 10 0 0 1 10 10c0 3.87-2.14 7.25-5.28 8.94M12 2a10 10 0 0 0-10 10c0 3.87 2.14 7.25-5.28 8.94" />
-          <path d="M12 22a10 10 0 0 1-10-10c0-3.87 2.14 7.25-5.28-8.94" />
-          <path d="M12 22a10 10 0 0 0 10-10c0-3.87-2.14 7.25-5.28-8.94" />
-          <path d="M12 2v20" />
-        </svg>
-        <h1 className="text-xl font-bold text-gray-100">
-          ChatMig <span className="text-blue-500">AI</span>
-        </h1>
-      </div>
+    <header className="w-full bg-black border-b border-gray-800 shadow-md sticky top-0 z-10">
+      <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        {/* Logo + título */}
+        <div className="flex items-center gap-3">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-8 w-8 text-blue-500 flex-shrink-0"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M2 12h20M12 2a10 10 0 0 1 10 10c0 3.87-2.14 7.25-5.28 8.94M12 2a10 10 0 0 0-10 10c0 3.87-2.14 7.25-5.28 8.94" />
+            <path d="M12 22a10 10 0 0 1-10-10c0-3.87 2.14-7.25-5.28-8.94" />
+            <path d="M12 22a10 10 0 0 0 10-10c0-3.87-2.14-7.25-5.28-8.94" />
+            <path d="M12 2v20" />
+          </svg>
+          <div className="flex flex-col">
+            <h1 className="text-lg sm:text-xl font-bold text-gray-100 leading-tight">
+              ChatMig <span className="text-blue-500">AI</span>
+            </h1>
+            <span className="text-[11px] text-gray-500 sm:text-xs">
+              Asistente migratorio 24/7
+            </span>
+          </div>
+        </div>
 
-      {user ? (
-        <div className="flex items-center space-x-3">
-          <span className="text-sm text-gray-300 hidden sm:block">
-            {user.email}
-          </span>
-
-          <div className="hidden sm:flex items-center space-x-2">
-            <div className="w-px h-5 bg-gray-700" />
-            <button
+        {/* Navegación */}
+        {!isLoggedIn ? (
+          // Usuario nuevo → SOLO Chat + Iniciar sesión
+          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+            <NavButton
+              active={currentView === 'chat'}
               onClick={() => onNavigate('chat')}
-              className={`text-sm font-medium px-2 py-1 rounded-md transition-colors ${
-                currentView === 'chat'
-                  ? 'text-blue-400 bg-blue-900/40'
-                  : 'text-gray-300 hover:text-blue-400'
-              }`}
             >
               Chat
-            </button>
-            <button
-              onClick={() => onNavigate('dashboard')}
-              className={`text-sm font-medium px-2 py-1 rounded-md transition-colors ${
-                currentView === 'dashboard'
-                  ? 'text-blue-400 bg-blue-900/40'
-                  : 'text-gray-300 hover:text-blue-400'
-              }`}
-            >
-              Mi cuenta
-            </button>
-            {isAdmin && (
-              <button
-                onClick={() => onNavigate('admin')}
-                className={`text-sm font-medium px-2 py-1 rounded-md transition-colors ${
-                  currentView === 'admin'
-                    ? 'text-blue-400 bg-blue-900/40'
-                    : 'text-gray-300 hover:text-blue-400'
-                }`}
-              >
-                Admin
-              </button>
-            )}
-          </div>
+            </NavButton>
 
-          <div className="w-px h-5 bg-gray-700" />
-          <button
-            onClick={onLogout}
-            className="text-sm font-medium text-blue-400 hover:underline focus:outline-none"
-          >
-            Cerrar sesión
-          </button>
-        </div>
-      ) : (
-        <div className="text-sm text-gray-300">
-          Asistente Migratorio
-        </div>
-      )}
+            <NavButton
+              active={currentView === 'dashboard'}
+              onClick={() => onNavigate('dashboard')}
+            >
+              Iniciar sesión
+            </NavButton>
+          </div>
+        ) : (
+          // Usuario logueado → SOLO Chat + Cerrar sesión (SIN correo)
+          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+            <NavButton
+              active={currentView === 'chat'}
+              onClick={() => onNavigate('chat')}
+            >
+              Chat
+            </NavButton>
+
+            <button
+              onClick={onLogout}
+              className="px-3 py-1.5 rounded-md text-sm font-medium text-blue-400 hover:text-blue-300 hover:bg-blue-900/20 transition-colors"
+            >
+              Cerrar sesión
+            </button>
+          </div>
+        )}
+      </div>
     </header>
   );
 };

@@ -30,5 +30,5 @@
   "include": [
     "src",
     "vite-env.d.ts"
-  ]
+, "App.tsx", "AuthWrapper.tsx", "src/main.tsx", "AdminApp.tsx"  ]
 }

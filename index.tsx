@@ -1,44 +1,30 @@
+// index.tsx
 import './index.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import AuthWrapper from './AuthWrapper';
-import App from './App';
-import { User, Plan } from './types';
 
+import AuthWrapper from './AuthWrapper';
+import AdminApp from './AdminApp';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
-  throw new Error('Could not find root element to mount to');
+  throw new Error('No se encontró el elemento root');
 }
 
 const root = ReactDOM.createRoot(rootElement);
 
-// Ruta actual (/, /admin, etc.)
+// Detecta la ruta actual: /  o  /admin
 const path = window.location.pathname;
 
-if (path === '/admin') {
-  // Usuario admin “fake” solo para desarrollo
-  const adminUser: User = {
-    email: 'madmin@chatmig.com',
-    firstName: 'Admin',
-    lastName: 'Local',
-  };
-
+if (path.startsWith('/admin')) {
+  // 🔐 Panel ADMIN: siempre pide correo + clave (lo maneja AdminApp)
   root.render(
     <React.StrictMode>
-      <App
-        user={adminUser}
-        plan={Plan.PREMIUM}
-        onLogout={() => {
-          // Si haces logout desde admin, te mando al flujo normal
-          window.location.href = '/';
-        }}
-        initialView="admin"
-      />
+      <AdminApp />
     </React.StrictMode>
   );
 } else {
-  // Flujo normal: login / pago / etc.
+  // 🧑‍💻 Flujo normal de usuarios (login, pago, chat, etc.)
   root.render(
     <React.StrictMode>
       <AuthWrapper />
