@@ -111,64 +111,73 @@ const AdminApp: React.FC = () => {
       setChatLoading(true);
 
       const newUserMessage: ChatMessage = { role: 'user', content: trimmed };
-      const history = [...messages, newUserMessage];
-      setMessages(history);
 
-      try {
-        // placeholder del modelo
-        setMessages(prev => [...prev, { role: 'model', content: '' }]);
+      // usar función para evitar estado “stale”
+      setMessages(prevHistory => {
+        const history = [...prevHistory, newUserMessage];
 
-        const stream = await runChatStream(history, Plan.PREMIUM);
-        let full = '';
+        (async () => {
+          try {
+            // placeholder del modelo
+            setMessages(prev => [...prev, { role: 'model', content: '' }]);
 
-        for await (const chunk of stream as any) {
-          let chunkText = '';
-          if (typeof chunk.text === 'function') {
-            chunkText = chunk.text();
-          } else if (typeof chunk.text === 'string') {
-            chunkText = chunk.text;
-          }
+            const stream = await runChatStream(history, Plan.PREMIUM);
+            let full = '';
 
-          if (chunkText) {
-            full += chunkText;
+            for await (const chunk of stream as any) {
+              let chunkText = '';
+              if (typeof chunk.text === 'function') {
+                chunkText = chunk.text();
+              } else if (typeof chunk.text === 'string') {
+                chunkText = chunk.text;
+              }
+
+              if (chunkText) {
+                full += chunkText;
+                setMessages(prev => {
+                  const last = prev[prev.length - 1];
+                  if (last && last.role === 'model') {
+                    const updated: ChatMessage = { ...last, content: full };
+                    return [...prev.slice(0, -1), updated];
+                  }
+                  return prev;
+                });
+              }
+            }
+
+            if (!full) {
+              // si no respondió nada, limpiamos el placeholder
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last && last.role === 'model' && !last.content) {
+                  return prev.slice(0, -1);
+                }
+                return prev;
+              });
+            }
+          } catch (err: any) {
+            console.error('[AdminApp] chat error:', err);
+            const msg =
+              err instanceof Error
+                ? err.message
+                : 'Error inesperado en el chat.';
+            setChatError(`Ocurrió un error: ${msg}`);
             setMessages(prev => {
               const last = prev[prev.length - 1];
-              if (last && last.role === 'model') {
-                const updated: ChatMessage = { ...last, content: full };
-                return [...prev.slice(0, -1), updated];
+              if (last && last.role === 'model' && !last.content) {
+                return prev.slice(0, -1);
               }
               return prev;
             });
+          } finally {
+            setChatLoading(false);
           }
-        }
+        })();
 
-        if (!full) {
-          // si no respondió nada, limpiamos el placeholder
-          setMessages(prev => {
-            const last = prev[prev.length - 1];
-            if (last && last.role === 'model' && !last.content) {
-              return prev.slice(0, -1);
-            }
-            return prev;
-          });
-        }
-      } catch (err: any) {
-        console.error('[AdminApp] chat error:', err);
-        const msg =
-          err instanceof Error ? err.message : 'Error inesperado en el chat.';
-        setChatError(`Ocurrió un error: ${msg}`);
-        setMessages(prev => {
-          const last = prev[prev.length - 1];
-          if (last && last.role === 'model' && !last.content) {
-            return prev.slice(0, -1);
-          }
-          return prev;
-        });
-      } finally {
-        setChatLoading(false);
-      }
+        return history;
+      });
     },
-    [messages, chatLoading]
+    [chatLoading]
   );
 
   /* ---------- UI ---------- */
