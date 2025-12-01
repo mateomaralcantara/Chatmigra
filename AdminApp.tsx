@@ -16,13 +16,14 @@ const INITIAL_ADMIN_MESSAGE: ChatMessage = {
 };
 
 const AdminApp: React.FC = () => {
+  // usuario admin
   const [adminUser, setAdminUser] = useState<User | null>(null);
 
   // login state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // vista del panel
   const [view, setView] = useState<'dashboard' | 'chat'>('dashboard');
@@ -35,17 +36,16 @@ const AdminApp: React.FC = () => {
   const [chatError, setChatError] = useState<string | null>(null);
 
   /* ---------- LOGIN ADMIN ---------- */
-
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (authLoading) return;
 
-    setAuthError('');
+    setAuthError(null);
     setAuthLoading(true);
 
-    const cleanEmail = email.trim().toLowerCase();
-
     try {
+      const cleanEmail = email.trim().toLowerCase();
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
         password,
@@ -67,10 +67,11 @@ const AdminApp: React.FC = () => {
       }
 
       setAdminUser({
-        email: logged.email!,
-        firstName: logged.user_metadata?.first_name || 'Admin',
-        lastName: logged.user_metadata?.last_name || '',
+        email: logged!.email!,
+        firstName: (logged!.user_metadata as any)?.first_name || 'Admin',
+        lastName: (logged!.user_metadata as any)?.last_name || '',
       });
+
       setView('dashboard');
     } catch (err) {
       console.error('[AdminApp] login fatal error:', err);
@@ -80,16 +81,18 @@ const AdminApp: React.FC = () => {
     }
   };
 
+  /* ---------- LOGOUT ---------- */
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
     } catch (err) {
       console.error('Error al cerrar sesión de admin:', err);
     } finally {
+      // limpiar todo
       setAdminUser(null);
       setEmail('');
       setPassword('');
-      setAuthError('');
+      setAuthError(null);
       setAuthLoading(false);
       setView('dashboard');
       setMessages([INITIAL_ADMIN_MESSAGE]);
@@ -99,7 +102,6 @@ const AdminApp: React.FC = () => {
   };
 
   /* ---------- CHAT DE PRUEBA (ADMIN) ---------- */
-
   const handleSendAdminMessage = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
@@ -110,11 +112,10 @@ const AdminApp: React.FC = () => {
 
       const newUserMessage: ChatMessage = { role: 'user', content: trimmed };
       const history = [...messages, newUserMessage];
-
       setMessages(history);
 
       try {
-        // mensaje vacío placeholder del modelo
+        // placeholder del modelo
         setMessages(prev => [...prev, { role: 'model', content: '' }]);
 
         const stream = await runChatStream(history, Plan.PREMIUM);
@@ -122,7 +123,6 @@ const AdminApp: React.FC = () => {
 
         for await (const chunk of stream as any) {
           let chunkText = '';
-
           if (typeof chunk.text === 'function') {
             chunkText = chunk.text();
           } else if (typeof chunk.text === 'string') {
@@ -143,7 +143,7 @@ const AdminApp: React.FC = () => {
         }
 
         if (!full) {
-          // si no respondió nada, limpiar placeholder
+          // si no respondió nada, limpiamos el placeholder
           setMessages(prev => {
             const last = prev[prev.length - 1];
             if (last && last.role === 'model' && !last.content) {
@@ -157,7 +157,6 @@ const AdminApp: React.FC = () => {
         const msg =
           err instanceof Error ? err.message : 'Error inesperado en el chat.';
         setChatError(`Ocurrió un error: ${msg}`);
-
         setMessages(prev => {
           const last = prev[prev.length - 1];
           if (last && last.role === 'model' && !last.content) {
@@ -178,22 +177,23 @@ const AdminApp: React.FC = () => {
   if (!adminUser) {
     return (
       <div className="min-h-screen bg-black text-gray-100 flex items-center justify-center px-4">
-        <div className="w-full max-w-md bg-neutral-900 border border-gray-800 rounded-2xl p-6 shadow-xl">
-          <h1 className="text-2xl font-bold mb-2 text-center">
-            Panel Administrador
-          </h1>
-          <p className="text-sm text-gray-400 mb-6 text-center">
+        <div className="max-w-md w-full bg-neutral-900/80 border border-neutral-800 rounded-xl p-6 shadow-xl">
+          <h1 className="text-xl font-semibold mb-1">Acceso Admin</h1>
+          <p className="text-xs text-gray-400 mb-4">
             Acceso exclusivo para el dueño de la plataforma.
           </p>
 
-          <form onSubmit={handleLogin} className="space-y-4" autoComplete="off">
+          <form
+            onSubmit={handleLogin}
+            className="space-y-4"
+            autoComplete="off"
+          >
             <div>
               <label className="block text-xs text-gray-400 mb-1">
                 Correo
               </label>
               <input
                 type="email"
-                autoComplete="off"
                 className="w-full px-3 py-2 rounded-md bg-black border border-gray-700 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
@@ -208,10 +208,10 @@ const AdminApp: React.FC = () => {
               </label>
               <input
                 type="password"
-                autoComplete="new-password"
                 className="w-full px-3 py-2 rounded-md bg-black border border-gray-700 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
                 required
               />
             </div>
@@ -233,7 +233,7 @@ const AdminApp: React.FC = () => {
     );
   }
 
-  // admin logueado → panel + chat de prueba
+  // admin logueado → panel + chat
   return (
     <div className="min-h-screen bg-black text-gray-100 flex flex-col">
       {/* Top bar */}
@@ -266,31 +266,27 @@ const AdminApp: React.FC = () => {
             </button>
           </div>
         </div>
-
         <button
           onClick={handleLogout}
           className="px-3 py-1.5 rounded-md text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-900/20 transition-colors"
         >
-          Salir del panel
+          Cerrar sesión
         </button>
       </div>
 
       {/* Contenido principal */}
       <div className="flex-1">
         {view === 'dashboard' && <AdminDashboard user={adminUser} />}
-
         {view === 'chat' && (
           <div className="flex flex-col h-[calc(100vh-64px)]">
             <div className="flex-1">
               <ChatWindow messages={messages} isLoading={chatLoading} />
             </div>
-
             {chatError && (
               <div className="px-4 py-2 text-center text-red-400 bg-red-900/30">
                 {chatError}
               </div>
             )}
-
             <div className="bg-slate-950/70 border-t border-slate-800">
               <ChatInput
                 onSendMessage={handleSendAdminMessage}
