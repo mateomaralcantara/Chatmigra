@@ -3,32 +3,52 @@
     "target": "ES2022",
     "experimentalDecorators": true,
     "useDefineForClassFields": false,
+
     "module": "ESNext",
     "lib": [
       "ES2022",
       "DOM",
       "DOM.Iterable"
     ],
+
     "skipLibCheck": true,
     "types": [
       "node",
       "vite/client"
     ],
+
     "moduleResolution": "bundler",
-    "isolatedModules": true,
     "moduleDetection": "force",
+    "isolatedModules": true,
+
     "allowJs": true,
     "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+
     "paths": {
       "@/*": [
         "./*"
       ]
     },
-    "allowImportingTsExtensions": true,
-    "noEmit": true
+
+    "noEmit": true,
+
+    /* 🔧 mejoras añadidas */
+    "baseUrl": ".",
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true
   },
   "include": [
     "src",
-    "vite-env.d.ts"
-, "App.tsx", "AuthWrapper.tsx", "src/main.tsx", "AdminApp.tsx"  ]
+    "vite-env.d.ts",
+    "App.tsx",
+    "src/AuthWrapper.tsx",
+    "src/main.tsx",
+    "src/AdminApp.tsx"
+  ]
 }

@@ -27,9 +27,9 @@ export const getAccountDashboardData = async (): Promise<AccountDashboardData> =
       tokensMax: 250000,
     },
     payments: [
-      { id: 'pi_3Pabcde...', date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toLocaleDateString('es-ES'), amount: '$20.00 USD', status: 'Pagado' },
-      { id: 'pi_3Oxyz...', date: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toLocaleDateString('es-ES'), amount: '$20.00 USD', status: 'Pagado' },
-      { id: 'pi_3N123...', date: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toLocaleDateString('es-ES'), amount: '$20.00 USD', status: 'Pagado' },
+      { id: 'pi_3Pabcde...', date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toLocaleDateString('es-ES'), amount: '$19.95 USD', status: 'Pagado' },
+      { id: 'pi_3Oxyz...', date: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toLocaleDateString('es-ES'), amount: '$19.95 USD', status: 'Pagado' },
+      { id: 'pi_3N123...', date: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toLocaleDateString('es-ES'), amount: '$19.95 USD', status: 'Pagado' },
     ],
   };
 

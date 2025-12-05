@@ -9,7 +9,7 @@ import {
 } from '@google/genai';
 
 import { ChatMessage, Plan } from '../types';
-import { createBlob, decode, decodeAudioData } from '../utils/audio';
+import { createBlob, decode, decodeAudioData } from '../../utils/audio';
 
 /* ---------- PROMPTS BASE ---------- */
 

@@ -1,4 +1,9 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+} from 'react';
 import { supabase } from '../services/supabaseClient';
 import { User } from '../types';
 
@@ -8,6 +13,7 @@ interface AdminDashboardProps {
   user: User;
 }
 
+// Tablas base
 interface SubscriptionRow {
   id: string;
   user_email: string;
@@ -30,6 +36,7 @@ interface PaymentRow {
   created_at: string;
 }
 
+// Métricas generales
 interface AdminOverview {
   totalRevenue: number;
   totalPayments: number;
@@ -37,6 +44,7 @@ interface AdminOverview {
   totalConversations: number;
 }
 
+// Agregado por usuario
 interface AdminUserRow {
   email: string;
   currentPlan: string | null;
@@ -45,12 +53,20 @@ interface AdminUserRow {
   totalPaidUsd: number;
 }
 
+const createEmptyUserRow = (email: string): AdminUserRow => ({
+  email,
+  currentPlan: null,
+  lastActivity: null,
+  totalPayments: 0,
+  totalPaidUsd: 0,
+});
+
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [subscriptions, setSubscriptions] = useState<SubscriptionRow[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
-
   const [userRows, setUserRows] = useState<AdminUserRow[]>([]);
+
   const [userSearch, setUserSearch] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -59,7 +75,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
 
-  const isAdmin = user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  const isAdmin =
+    user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -67,7 +84,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
     setInfo('');
 
     try {
-      const [recentSubs, recentPays, allSubs, allPays, allConvs] = await Promise.all([
+      const [
+        recentSubs,
+        recentPays,
+        allSubs,
+        allPays,
+        allConvs,
+      ] = await Promise.all([
         supabase
           .from('subscriptions')
           .select(
@@ -94,8 +117,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
       ]);
 
       if (!recentSubs.error) {
-        setSubscriptions((recentSubs.data as SubscriptionRow[]) || []);
+        setSubscriptions(
+          (recentSubs.data as SubscriptionRow[]) || []
+        );
       }
+
       if (!recentPays.error) {
         setPayments((recentPays.data as PaymentRow[]) || []);
       }
@@ -111,92 +137,96 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
       let activePremium = 0;
       const totalConversations = (allConvs.data || []).length;
 
-      (allSubs.data || []).forEach((s: any) => {
-        const email = s.user_email as string;
-        if (!email) return;
+      // Suscripciones agregadas por usuario
+      (allSubs.data || []).forEach(
+        (s: {
+          user_email: string;
+          plan: string;
+          status: string;
+          created_at: string;
+        }) => {
+          const email = s.user_email;
+          if (!email) return;
 
-        let row = byEmail.get(email);
-        if (!row) {
-          row = {
-            email,
-            currentPlan: null,
-            lastActivity: null,
-            totalPayments: 0,
-            totalPaidUsd: 0,
-          };
-          byEmail.set(email, row);
-        }
+          let row = byEmail.get(email);
+          if (!row) {
+            row = createEmptyUserRow(email);
+            byEmail.set(email, row);
+          }
 
-        if (s.status === 'active') {
-          row.currentPlan = s.plan;
-          if (s.plan === 'premium') activePremium += 1;
-        }
+          if (s.status === 'active') {
+            row.currentPlan = s.plan;
+            if (s.plan === 'premium') activePremium += 1;
+          }
 
-        if (!row.lastActivity || s.created_at > row.lastActivity) {
-          row.lastActivity = s.created_at;
-        }
-      });
-
-      (allPays.data || []).forEach((p: any) => {
-        const email = p.user_email as string;
-        if (!email) return;
-
-        let row = byEmail.get(email);
-        if (!row) {
-          row = {
-            email,
-            currentPlan: null,
-            lastActivity: null,
-            totalPayments: 0,
-            totalPaidUsd: 0,
-          };
-          byEmail.set(email, row);
-        }
-
-        if (p.status === 'paid') {
-          totalPayments += 1;
-
-          if (p.currency === 'USD') {
-            let amountNum = 0;
-            if (typeof p.amount === 'number') {
-              amountNum = p.amount;
-            } else if (typeof p.amount === 'string') {
-              const parsed = parseFloat(p.amount);
-              if (!Number.isNaN(parsed)) amountNum = parsed;
-            }
-
-            if (amountNum > 0) {
-              totalRevenue += amountNum;
-              row.totalPaidUsd += amountNum;
-            }
+          if (!row.lastActivity || s.created_at > row.lastActivity) {
+            row.lastActivity = s.created_at;
           }
         }
+      );
 
-        if (!row.lastActivity || p.created_at > row.lastActivity) {
-          row.lastActivity = p.created_at;
+      // Pagos agregados por usuario
+      (allPays.data || []).forEach(
+        (p: {
+          user_email: string;
+          amount: number | string;
+          currency: string;
+          status: string;
+          created_at: string;
+        }) => {
+          const email = p.user_email;
+          if (!email) return;
+
+          let row = byEmail.get(email);
+          if (!row) {
+            row = createEmptyUserRow(email);
+            byEmail.set(email, row);
+          }
+
+          if (p.status === 'paid') {
+            totalPayments += 1;
+            row.totalPayments += 1;
+
+            if (p.currency === 'USD') {
+              let amountNum = 0;
+
+              if (typeof p.amount === 'number') {
+                amountNum = p.amount;
+              } else if (typeof p.amount === 'string') {
+                const parsed = parseFloat(p.amount);
+                if (!Number.isNaN(parsed)) amountNum = parsed;
+              }
+
+              if (amountNum > 0) {
+                totalRevenue += amountNum;
+                row.totalPaidUsd += amountNum;
+              }
+            }
+          }
+
+          if (!row.lastActivity || p.created_at > row.lastActivity) {
+            row.lastActivity = p.created_at;
+          }
         }
-      });
+      );
 
-      (allConvs.data || []).forEach((c: any) => {
-        const email = c.user_email as string;
-        if (!email) return;
+      // Conversaciones como actividad
+      (allConvs.data || []).forEach(
+        (c: { user_email: string; created_at: string }) => {
+          const email = c.user_email;
+          if (!email) return;
 
-        let row = byEmail.get(email);
-        if (!row) {
-          row = {
-            email,
-            currentPlan: null,
-            lastActivity: null,
-            totalPayments: 0,
-            totalPaidUsd: 0,
-          };
-          byEmail.set(email, row);
+          let row = byEmail.get(email);
+          if (!row) {
+            row = createEmptyUserRow(email);
+            byEmail.set(email, row);
+          }
+
+          if (!row.lastActivity || c.created_at > row.lastActivity) {
+            row.lastActivity = c.created_at;
+          }
         }
-
-        if (!row.lastActivity || c.created_at > row.lastActivity) {
-          row.lastActivity = c.created_at;
-        }
-      });
+      );
 
       const usersArr = Array.from(byEmail.values()).sort((a, b) => {
         if (!a.lastActivity) return 1;
@@ -205,7 +235,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
       });
 
       setUserRows(usersArr);
-
       setOverview({
         totalRevenue,
         totalPayments,
@@ -214,7 +243,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
       });
     } catch (err) {
       console.error('Admin load error:', err);
-      setError('Ocurrió un error al cargar los datos de administración.');
+      setError(
+        'Ocurrió un error al cargar los datos de administración.'
+      );
     } finally {
       setLoading(false);
     }
@@ -229,112 +260,145 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
   const filteredUserRows = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
     if (!q) return userRows;
-    return userRows.filter(r => r.email.toLowerCase().includes(q));
+    return userRows.filter(row =>
+      row.email.toLowerCase().includes(q)
+    );
   }, [userRows, userSearch]);
 
-  const handleUpdateSubscriptionStatus = async (id: string, newStatus: string) => {
-    setUpdatingId(id);
-    setError('');
-    setInfo('');
+  const handleUpdateSubscriptionStatus = useCallback(
+    async (id: string, newStatus: string) => {
+      setUpdatingId(id);
+      setError('');
+      setInfo('');
 
-    try {
-      const { error } = await supabase
-        .from('subscriptions')
-        .update({ status: newStatus })
-        .eq('id', id);
+      try {
+        const { error } = await supabase
+          .from('subscriptions')
+          .update({ status: newStatus })
+          .eq('id', id);
 
-      if (error) {
-        console.error('Error updating subscription:', error);
-        setError('No se pudo actualizar el estado de la suscripción.');
-        return;
+        if (error) {
+          console.error('Error updating subscription:', error);
+          setError(
+            'No se pudo actualizar el estado de la suscripción.'
+          );
+          return;
+        }
+
+        setSubscriptions(prev =>
+          prev.map(s =>
+            s.id === id ? { ...s, status: newStatus } : s
+          )
+        );
+      } catch (err) {
+        console.error('Update subscription error:', err);
+        setError(
+          'Error inesperado al actualizar la suscripción.'
+        );
+      } finally {
+        setUpdatingId(null);
       }
+    },
+    []
+  );
 
-      setSubscriptions(prev =>
-        prev.map(s => (s.id === id ? { ...s, status: newStatus } : s))
+  const handleSendReset = useCallback(
+    async (email: string) => {
+      setError('');
+      setInfo('');
+      setActionLoading(`reset:${email}`);
+
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(
+          email,
+          {
+            redirectTo:
+              window.location.origin + '/reset-password',
+          }
+        );
+
+        if (error) throw error;
+        setInfo(
+          `Se envió un correo de restablecimiento a ${email}.`
+        );
+      } catch (e) {
+        console.error('Error enviando reset password:', e);
+        setError(
+          `No se pudo enviar el correo de reset para ${email}.`
+        );
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    []
+  );
+
+  const handleDeleteUserData = useCallback(
+    async (email: string) => {
+      const ok = window.confirm(
+        `⚠️ Vas a borrar TODAS las conversaciones, mensajes, suscripciones y pagos asociados a ${email}.\nEsto NO borra la cuenta de autenticación en Supabase.\n\n¿Seguro?`
       );
-    } catch (err) {
-      console.error('Update subscription error:', err);
-      setError('Error inesperado al actualizar la suscripción.');
-    } finally {
-      setUpdatingId(null);
-    }
-  };
+      if (!ok) return;
 
-  const handleSendReset = async (email: string) => {
-    setError('');
-    setInfo('');
-    setActionLoading(`reset:${email}`);
+      setError('');
+      setInfo('');
+      setActionLoading(`delete:${email}`);
 
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin + '/reset-password',
-      });
-
-      if (error) throw error;
-      setInfo(`Se envió un correo de restablecimiento a ${email}.`);
-    } catch (e) {
-      console.error('Error enviando reset password:', e);
-      setError(`No se pudo enviar el correo de reset para ${email}.`);
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleDeleteUserData = async (email: string) => {
-    const ok = window.confirm(
-      `⚠️ Vas a borrar TODAS las conversaciones, mensajes, suscripciones y pagos asociados a ${email}.\nEsto NO borra la cuenta de autenticación en Supabase.\n\n¿Seguro?`
-    );
-    if (!ok) return;
-
-    setError('');
-    setInfo('');
-    setActionLoading(`delete:${email}`);
-
-    try {
-      const { data: convs, error: convsError } = await supabase
-        .from('conversations')
-        .select('id')
-        .eq('user_email', email);
-
-      if (convsError) throw convsError;
-
-      const convIds = (convs || []).map((c: any) => c.id);
-
-      if (convIds.length > 0) {
-        const { error: msgError } = await supabase
-          .from('messages')
-          .delete()
-          .in('conversation_id', convIds);
-        if (msgError) throw msgError;
-
-        const { error: convDelError } = await supabase
+      try {
+        const { data: convs, error: convsError } = await supabase
           .from('conversations')
+          .select('id')
+          .eq('user_email', email);
+
+        if (convsError) throw convsError;
+
+        const convIds = (convs || []).map(
+          (c: { id: string }) => c.id
+        );
+
+        if (convIds.length > 0) {
+          const { error: msgError } = await supabase
+            .from('messages')
+            .delete()
+            .in('conversation_id', convIds);
+          if (msgError) throw msgError;
+
+          const { error: convDelError } = await supabase
+            .from('conversations')
+            .delete()
+            .eq('user_email', email);
+          if (convDelError) throw convDelError;
+        }
+
+        const { error: subError } = await supabase
+          .from('subscriptions')
           .delete()
           .eq('user_email', email);
-        if (convDelError) throw convDelError;
+        if (subError) throw subError;
+
+        const { error: payError } = await supabase
+          .from('payments')
+          .delete()
+          .eq('user_email', email);
+        if (payError) throw payError;
+
+        setUserRows(prev =>
+          prev.filter(r => r.email !== email)
+        );
+        setInfo(
+          `Se borraron los datos de negocio asociados a ${email}.`
+        );
+      } catch (e) {
+        console.error('Error borrando datos de usuario:', e);
+        setError(
+          `No se pudo borrar completamente la data de ${email}. Revisa Supabase.`
+        );
+      } finally {
+        setActionLoading(null);
       }
-
-      const { error: subError } = await supabase
-        .from('subscriptions')
-        .delete()
-        .eq('user_email', email);
-      if (subError) throw subError;
-
-      const { error: payError } = await supabase
-        .from('payments')
-        .delete()
-        .eq('user_email', email);
-      if (payError) throw payError;
-
-      setUserRows(prev => prev.filter(r => r.email !== email));
-      setInfo(`Se borraron los datos de negocio asociados a ${email}.`);
-    } catch (e) {
-      console.error('Error borrando datos de usuario:', e);
-      setError(`No se pudo borrar completamente la data de ${email}. Revisa Supabase.`);
-    } finally {
-      setActionLoading(null);
-    }
-  };
+    },
+    []
+  );
 
   if (!isAdmin) {
     return (
@@ -342,7 +406,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
         <div className="bg-neutral-900 text-yellow-300 px-4 py-3 rounded-lg text-center max-w-md border border-yellow-700/50">
           <p className="font-semibold mb-1">Acceso restringido</p>
           <p className="text-sm">
-            Esta sección es solo para el dueño de la plataforma. Inicia sesión con{' '}
+            Esta sección es solo para el dueño de la plataforma. Inicia
+            sesión con{' '}
             <code className="text-yellow-200">{ADMIN_EMAIL}</code>.
           </p>
         </div>
@@ -353,11 +418,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
   return (
     <div className="h-full overflow-y-auto bg-black text-gray-100">
       <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
+        {/* Header */}
         <div className="flex justify-between items-center">
           <div>
-            <h2 className="text-2xl font-bold mb-1">Panel de Administración</h2>
+            <h2 className="text-2xl font-bold mb-1">
+              Panel de Administración
+            </h2>
             <p className="text-sm text-gray-400">
-              Controla usuarios de pago, suscripciones y actividad de ChatMig.
+              Controla usuarios de pago, suscripciones y actividad de
+              ChatMig.
             </p>
           </div>
           <button
@@ -369,6 +438,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
           </button>
         </div>
 
+        {/* Mensajes de estado */}
         {error && (
           <div className="bg-red-900/40 text-red-200 px-4 py-2 rounded-md text-sm border border-red-700/60">
             {error}
@@ -380,7 +450,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
           </div>
         )}
 
-        {/* Usuarios agregados */}
+        {/* Usuarios resumidos */}
         <div className="bg-neutral-900 rounded-xl shadow border border-gray-800 p-4 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
@@ -404,7 +474,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
           </div>
 
           {loading && userRows.length === 0 ? (
-            <p className="text-sm text-gray-400">Cargando usuarios...</p>
+            <p className="text-sm text-gray-400">
+              Cargando usuarios...
+            </p>
           ) : filteredUserRows.length === 0 ? (
             <p className="text-sm text-gray-400">
               No hay usuarios que coincidan con el filtro.
@@ -416,9 +488,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                   <tr>
                     <th className="py-2 pr-3">Email</th>
                     <th className="py-2 pr-3">Plan</th>
-                    <th className="py-2 pr-3">Última actividad</th>
+                    <th className="py-2 pr-3">
+                      Última actividad
+                    </th>
                     <th className="py-2 pr-3">Pagos (USD)</th>
-                    <th className="py-2 pr-3 text-right">Acciones</th>
+                    <th className="py-2 pr-3 text-right">
+                      Acciones
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -435,30 +511,46 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                       </td>
                       <td className="py-2 pr-3 text-xs text-gray-400">
                         {row.lastActivity
-                          ? new Date(row.lastActivity).toLocaleString()
+                          ? new Date(
+                              row.lastActivity
+                            ).toLocaleString()
                           : '—'}
                       </td>
                       <td className="py-2 pr-3">
                         {row.totalPayments > 0
-                          ? `${row.totalPayments} pago(s) · $${row.totalPaidUsd.toFixed(2)}`
+                          ? `${row.totalPayments} pago(s) · $${row.totalPaidUsd.toFixed(
+                              2
+                            )}`
                           : 'Sin pagos'}
                       </td>
                       <td className="py-2 pl-3 text-right space-x-2">
                         <button
-                          onClick={() => handleSendReset(row.email)}
-                          disabled={actionLoading === `reset:${row.email}`}
+                          onClick={() =>
+                            handleSendReset(row.email)
+                          }
+                          disabled={
+                            actionLoading ===
+                            `reset:${row.email}`
+                          }
                           className="px-2 py-1 rounded-md text-xs bg-blue-600 text-white hover:bg-blue-500 disabled:bg-blue-900/60"
                         >
-                          {actionLoading === `reset:${row.email}`
+                          {actionLoading ===
+                          `reset:${row.email}`
                             ? 'Enviando...'
                             : 'Reset clave'}
                         </button>
                         <button
-                          onClick={() => handleDeleteUserData(row.email)}
-                          disabled={actionLoading === `delete:${row.email}`}
+                          onClick={() =>
+                            handleDeleteUserData(row.email)
+                          }
+                          disabled={
+                            actionLoading ===
+                            `delete:${row.email}`
+                          }
                           className="px-2 py-1 rounded-md text-xs bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900/60"
                         >
-                          {actionLoading === `delete:${row.email}`
+                          {actionLoading ===
+                          `delete:${row.email}`
                             ? 'Borrando...'
                             : 'Borrar data'}
                         </button>
@@ -471,8 +563,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
           )}
 
           <p className="text-[11px] text-gray-500 mt-1">
-            ⚠️ Este panel borra solo datos de negocio (conversaciones, mensajes, suscripciones y pagos).
-            La cuenta de autenticación (Auth) se gestiona desde el dashboard de Supabase.
+            ⚠️ Este panel borra solo datos de negocio (conversaciones,
+            mensajes, suscripciones y pagos). La cuenta de autenticación
+            (Auth) se gestiona desde el dashboard de Supabase.
           </p>
         </div>
 
@@ -483,10 +576,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
               Ingresos totales
             </p>
             <p className="text-2xl font-bold">
-              {overview ? `$${overview.totalRevenue.toFixed(2)} USD` : '—'}
+              {overview
+                ? `$${overview.totalRevenue.toFixed(2)} USD`
+                : '—'}
             </p>
             <p className="text-xs text-gray-500 mt-1">
-              Basado en pagos con estado <span className="font-semibold">paid</span> y moneda USD.
+              Basado en pagos con estado{' '}
+              <span className="font-semibold">paid</span> y moneda
+              USD.
             </p>
           </div>
 
@@ -550,8 +647,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                       key={sub.id}
                       className="border-b border-gray-800 bg-black/40"
                     >
-                      <td className="py-2 pr-3">{sub.user_email}</td>
-                      <td className="py-2 pr-3 capitalize">{sub.plan}</td>
+                      <td className="py-2 pr-3">
+                        {sub.user_email}
+                      </td>
+                      <td className="py-2 pr-3 capitalize">
+                        {sub.plan}
+                      </td>
                       <td className="py-2 pr-3 text-xs">
                         {sub.provider}
                         <br />
@@ -574,29 +675,41 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                         </span>
                       </td>
                       <td className="py-2 pr-3 text-xs text-gray-400">
-                        {new Date(sub.created_at).toLocaleString()}
+                        {new Date(
+                          sub.created_at
+                        ).toLocaleString()}
                       </td>
                       <td className="py-2 pr-3 space-x-2">
                         {sub.status !== 'active' && (
                           <button
                             onClick={() =>
-                              handleUpdateSubscriptionStatus(sub.id, 'active')
+                              handleUpdateSubscriptionStatus(
+                                sub.id,
+                                'active'
+                              )
                             }
                             disabled={updatingId === sub.id}
                             className="text-xs px-2 py-1 rounded bg-green-600 text-white hover:bg-green-500 disabled:bg-green-900/60"
                           >
-                            {updatingId === sub.id ? '...' : 'Activar'}
+                            {updatingId === sub.id
+                              ? '...'
+                              : 'Activar'}
                           </button>
                         )}
                         {sub.status !== 'canceled' && (
                           <button
                             onClick={() =>
-                              handleUpdateSubscriptionStatus(sub.id, 'canceled')
+                              handleUpdateSubscriptionStatus(
+                                sub.id,
+                                'canceled'
+                              )
                             }
                             disabled={updatingId === sub.id}
                             className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900/60"
                           >
-                            {updatingId === sub.id ? '...' : 'Cancelar'}
+                            {updatingId === sub.id
+                              ? '...'
+                              : 'Cancelar'}
                           </button>
                         )}
                       </td>
@@ -639,7 +752,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                       key={pay.id}
                       className="border-b border-gray-800 bg-black/40"
                     >
-                      <td className="py-2 pr-3">{pay.user_email}</td>
+                      <td className="py-2 pr-3">
+                        {pay.user_email}
+                      </td>
                       <td className="py-2 pr-3">
                         ${pay.amount.toFixed(2)} {pay.currency}
                       </td>
@@ -665,7 +780,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                         </span>
                       </td>
                       <td className="py-2 pr-3 text-xs text-gray-400">
-                        {new Date(pay.created_at).toLocaleString()}
+                        {new Date(
+                          pay.created_at
+                        ).toLocaleString()}
                       </td>
                     </tr>
                   ))}

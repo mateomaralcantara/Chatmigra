@@ -1,4 +1,3 @@
-// components/ImageSupport.tsx
 import React, { useEffect, useState } from 'react';
 
 interface ImageSupportProps {
@@ -11,7 +10,7 @@ interface ImageResult {
   title?: string;
 }
 
-const ImageSupport: React.FC<ImageSupportProps> = ({ query, count = 3 }) => {
+const ImageSupport: React.FC<ImageSupportProps> = ({ query, count = 1 }) => {
   const [images, setImages] = useState<ImageResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -42,7 +41,7 @@ const ImageSupport: React.FC<ImageSupportProps> = ({ query, count = 3 }) => {
   if (loading) {
     return (
       <p className="mt-2 text-xs text-gray-400">
-        Buscando imágenes relacionadas…
+        Buscando imagen relacionada…
       </p>
     );
   }
@@ -63,21 +62,26 @@ const ImageSupport: React.FC<ImageSupportProps> = ({ query, count = 3 }) => {
     );
   }
 
+  const mainImage = images[0];
+
   return (
-    <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
-      {images.map((img, idx) => (
-        <div
-          key={idx}
-          className="rounded-lg overflow-hidden border border-gray-800 bg-black"
-        >
-          <img
-            src={img.url}
-            alt={img.title || query}
-            className="w-full h-28 object-cover"
-            loading="lazy"
-          />
-        </div>
-      ))}
+    <div className="mt-4">
+      <div className="rounded-2xl overflow-hidden border border-slate-200/70 bg-slate-100 w-full">
+        <img
+          src={mainImage.url}
+          alt={mainImage.title || query}
+          className="w-full h-auto object-contain"
+          loading="lazy"
+        />
+      </div>
+      {mainImage.title && (
+        <p className="mt-2 text-xs text-gray-500">
+          Imagen relacionada con:{' '}
+          <span className="font-semibold text-gray-700">
+            {mainImage.title}
+          </span>
+        </p>
+      )}
     </div>
   );
 };

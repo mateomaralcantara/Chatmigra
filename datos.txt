@@ -3,7 +3,10 @@ https://supabase.com/dashboard/project/vovxtzcngqzdwjddrcis/settings/api
 chulimarti79-wq
 chulimarti79@gmail.com
 
+node scripts/debugDashboardPrice.mjs
 
+node api-server.mjs    :    backend
+npm run dev            :    frontend
 
 
 
@@ -11,6 +14,8 @@ PRIMER PASO CREAR PUBLICIDAD: CREAR FLAYER
 SEGUNDO ACTUALIZAR CAMPAÑAS EN TODO 
 CAMBIAR SUPSCRIPCIONES
 INTRODUCIR FORMULARIOS PARA CORREGIR ERRORES
-
+GUARDAR POR NOMBRES EL REGISTRO DE MENSAJES 
 
 479816 proyecto google cloud
+
+https://chatgpt.com/c/69303b7f-3b88-832d-b796-cf4a81a70779

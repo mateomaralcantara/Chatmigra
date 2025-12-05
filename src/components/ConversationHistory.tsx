@@ -14,16 +14,19 @@ const ConversationHistory: React.FC<ConversationHistoryProps> = ({
   currentConversationId,
   onSelectConversation,
   onNewConversation,
-  isLoading
+  isLoading,
 }) => {
+  const getConversationLabel = (conv: Conversation) => {
+    const title = conv.title?.trim();
+    if (title && title.length > 0) return title;
+    return `Chat del ${new Date(conv.created_at).toLocaleDateString()}`;
+  };
+
   return (
-    <div
+    <aside
       className="
         w-64 h-full flex-shrink-0 flex flex-col
-        bg-black
-        border-r border-gray-800
-        text-gray-100
-        shadow-lg
+        bg-black border-r border-gray-800 text-gray-100 shadow-lg
       "
     >
       {/* Botón Nuevo Chat */}
@@ -32,7 +35,7 @@ const ConversationHistory: React.FC<ConversationHistoryProps> = ({
           onClick={onNewConversation}
           disabled={isLoading}
           className="
-            w-full flex items-center justify-center space-x-2
+            w-full flex items-center justify-center gap-2
             px-4 py-2 text-sm font-medium rounded-md
             bg-blue-600 text-white
             hover:bg-blue-500
@@ -42,7 +45,12 @@ const ConversationHistory: React.FC<ConversationHistoryProps> = ({
             transition-colors
           "
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
             <path
               fillRule="evenodd"
               d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
@@ -68,14 +76,15 @@ const ConversationHistory: React.FC<ConversationHistoryProps> = ({
               No hay conversaciones guardadas.
             </p>
           )}
-          {conversations.map((conv) => (
+
+          {conversations.map(conv => (
             <button
               key={conv.id}
               onClick={() => onSelectConversation(conv.id)}
               disabled={isLoading}
               className={`
                 w-full text-left px-3 py-2 text-sm font-medium rounded-md
-                transition-colors flex items-center space-x-3
+                transition-colors flex items-center gap-3
                 disabled:opacity-50
                 ${
                   currentConversationId === conv.id
@@ -93,14 +102,12 @@ const ConversationHistory: React.FC<ConversationHistoryProps> = ({
                 <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
                 <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h1a2 2 0 002-2V9a2 2 0 00-2-2h-1z" />
               </svg>
-              <span className="truncate">
-                Chat del {new Date(conv.created_at).toLocaleDateString()}
-              </span>
+              <span className="truncate">{getConversationLabel(conv)}</span>
             </button>
           ))}
         </nav>
       </div>
-    </div>
+    </aside>
   );
 };
 

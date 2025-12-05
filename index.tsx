@@ -1,10 +1,9 @@
-// index.tsx
-import './index.css';
+// main.tsx o index.tsx (el que tu proyecto use como entry)
+import './src/index.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-
 import AuthWrapper from './AuthWrapper';
-import AdminApp from './AdminApp';
+import AdminApp from './src/AdminApp';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -17,14 +16,14 @@ const root = ReactDOM.createRoot(rootElement);
 const path = window.location.pathname;
 
 if (path.startsWith('/admin')) {
-  // 🔐 Panel ADMIN: siempre pide correo + clave (lo maneja AdminApp)
+  // 🔐 Panel ADMIN
   root.render(
     <React.StrictMode>
       <AdminApp />
     </React.StrictMode>
   );
 } else {
-  // 🧑‍💻 Flujo normal de usuarios (login, pago, chat, etc.)
+  // 🧑‍💻 Flujo normal
   root.render(
     <React.StrictMode>
       <AuthWrapper />

@@ -1,4 +1,3 @@
-// src/components/Header.tsx
 import React from 'react';
 import { User } from '../types';
 
@@ -11,8 +10,14 @@ interface HeaderProps {
   onNavigate: (view: View) => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ user, onLogout, currentView, onNavigate }) => {
+const Header: React.FC<HeaderProps> = ({
+  user,
+  onLogout,
+  currentView,
+  onNavigate,
+}) => {
   const isLoggedIn = !!user;
+  const isAdmin = Boolean(user && (user as any).isAdmin);
 
   const NavButton: React.FC<{
     active?: boolean;
@@ -38,21 +43,9 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout, currentView, onNavigate
       <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         {/* Logo + título */}
         <div className="flex items-center gap-3">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-8 w-8 text-blue-500 flex-shrink-0"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M2 12h20M12 2a10 10 0 0 1 10 10c0 3.87-2.14 7.25-5.28 8.94M12 2a10 10 0 0 0-10 10c0 3.87-2.14 7.25-5.28 8.94" />
-            <path d="M12 22a10 10 0 0 1-10-10c0-3.87 2.14-7.25-5.28-8.94" />
-            <path d="M12 22a10 10 0 0 0 10-10c0-3.87-2.14-7.25-5.28-8.94" />
-            <path d="M12 2v20" />
-          </svg>
+          <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center text-white text-sm font-bold">
+            CM
+          </div>
           <div className="flex flex-col">
             <h1 className="text-lg sm:text-xl font-bold text-gray-100 leading-tight">
               ChatMig <span className="text-blue-500">AI</span>
@@ -64,41 +57,54 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout, currentView, onNavigate
         </div>
 
         {/* Navegación */}
-        {!isLoggedIn ? (
-          // Usuario nuevo → SOLO Chat + Iniciar sesión
-          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
-            <NavButton
-              active={currentView === 'chat'}
-              onClick={() => onNavigate('chat')}
-            >
-              Chat
-            </NavButton>
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+          {isLoggedIn && user && (
+            <span className="hidden sm:inline text-xs text-gray-400 max-w-[180px] truncate">
+              {user.email}
+            </span>
+          )}
 
+          <NavButton
+            active={currentView === 'chat'}
+            onClick={() => onNavigate('chat')}
+          >
+            Chat
+          </NavButton>
+
+          {isLoggedIn && (
             <NavButton
               active={currentView === 'dashboard'}
               onClick={() => onNavigate('dashboard')}
             >
-              Iniciar sesión
+              Mi cuenta
             </NavButton>
-          </div>
-        ) : (
-          // Usuario logueado → SOLO Chat + Cerrar sesión (SIN correo)
-          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
-            <NavButton
-              active={currentView === 'chat'}
-              onClick={() => onNavigate('chat')}
-            >
-              Chat
-            </NavButton>
+          )}
 
+          {isAdmin && (
+            <NavButton
+              active={currentView === 'admin'}
+              onClick={() => onNavigate('admin')}
+            >
+              Admin
+            </NavButton>
+          )}
+
+          {isLoggedIn ? (
             <button
               onClick={onLogout}
               className="px-3 py-1.5 rounded-md text-sm font-medium text-blue-400 hover:text-blue-300 hover:bg-blue-900/20 transition-colors"
             >
               Cerrar sesión
             </button>
-          </div>
-        )}
+          ) : (
+            <NavButton
+              active={currentView === 'dashboard'}
+              onClick={() => onNavigate('dashboard')}
+            >
+              Iniciar sesión
+            </NavButton>
+          )}
+        </div>
       </div>
     </header>
   );

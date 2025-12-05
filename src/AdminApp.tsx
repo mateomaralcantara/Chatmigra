@@ -289,7 +289,17 @@ const AdminApp: React.FC = () => {
         {view === 'chat' && (
           <div className="flex flex-col h-[calc(100vh-64px)]">
             <div className="flex-1">
-              <ChatWindow messages={messages} isLoading={chatLoading} />
+              <ChatWindow
+                messages={messages}
+                isLoading={chatLoading}
+                plan={Plan.PREMIUM}
+                userEmail={adminUser.email}
+                onGoToUpgrade={() =>
+                  alert(
+                    'Estás en modo admin, ya estás probando el modo Premium 😉'
+                  )
+                }
+              />
             </div>
             {chatError && (
               <div className="px-4 py-2 text-center text-red-400 bg-red-900/30">
@@ -302,7 +312,7 @@ const AdminApp: React.FC = () => {
                 isLoading={chatLoading}
                 onToggleVoice={() => {
                   alert(
-                    'El chat de prueba admin ahora mismo solo soporta texto. (La voz la tienes en la app de usuario normal).'
+                    'El chat de prueba admin ahora mismo solo soporta texto. La voz está en la app de usuario normal.'
                   );
                 }}
                 isVoiceActive={false}
