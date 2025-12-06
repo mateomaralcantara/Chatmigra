@@ -12,8 +12,8 @@ dist
 .env
 .env.local
 dist-ssr
-*.local
 chatmig-update.ps1
+chtmig-clean-and-build.ps1
 
 # Editor directories and files
 .vscode/*
