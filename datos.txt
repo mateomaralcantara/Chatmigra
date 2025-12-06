@@ -18,24 +18,3 @@ GUARDAR POR NOMBRES EL REGISTRO DE MENSAJES
 
 479816 proyecto google cloud
 
-https://chatgpt.com/c/69303b7f-3b88-832d-b796-cf4a81a70779
-
-
-cd C:\Users\martin\Desktop\APPS\ChatMi
-
-# Asegúrate de estar en la versión de node correcta
-nvm use 24.11.1
-
-# Ver qué cambió
-git status
-
-# Opcional: probar que todo ande
-npm test            # si tienes tests
-npm run build       # para comprobar el build
-
-# Preparar commit
-git add .
-git commit -m "feat: descripción corta de lo que cambiaste"
-
-# Subir a GitHub
-git push
