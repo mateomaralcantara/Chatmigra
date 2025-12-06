@@ -64,19 +64,47 @@ const AuthPanel: React.FC<AuthPanelProps> = ({ onLoginSuccess }) => {
     setInfo('');
   };
 
+  // 🔧 Optimizado: enviamos la API key explícitamente a Supabase REST
   const saveMarketingContact = useCallback(
     async (user: { email: string; firstName?: string; lastName?: string }) => {
       try {
-        await supabase.from('marketing_contacts').upsert(
-          {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+        if (!supabaseUrl || !supabaseAnonKey) {
+          console.error(
+            '[marketing_contacts] Faltan VITE_SUPABASE_URL o VITE_SUPABASE_ANON_KEY'
+          );
+          return;
+        }
+
+        const url = `${supabaseUrl}/rest/v1/marketing_contacts?on_conflict=email`;
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${supabaseAnonKey}`,
+            Prefer: 'resolution=merge-duplicates',
+          },
+          body: JSON.stringify({
             email: user.email,
             first_name: user.firstName ?? null,
             last_name: user.lastName ?? null,
             source: 'chatmig_app',
             consent: true,
-          },
-          { onConflict: 'email' }
-        );
+          }),
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          console.error(
+            '[marketing_contacts] Error Supabase REST:',
+            res.status,
+            text
+          );
+        }
       } catch (err) {
         console.error('Error guardando contacto de marketing:', err);
       }
