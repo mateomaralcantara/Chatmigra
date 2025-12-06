@@ -7,12 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
     "test": "echo \"(sin tests todavía)\" && exit 0",
     "check": "npm run lint && npm run typecheck && npm run build",
-
     "deploy-all": "npm run build && git add . && git commit -m \"deploy auto\" || echo \"(sin cambios que commitear)\" && git push origin main",
     "check:gemini": "node scripts/checkGeminiKey.mjs"
   },
@@ -20,7 +18,7 @@
     "@google/genai": "^1.30.0",
     "@paypal/paypal-js": "^9.0.1",
     "@paypal/react-paypal-js": "^8.9.2",
-    "@supabase/supabase-js": "^2.86.0",
+    "@supabase/supabase-js": "^2.86.2",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "react": "^19.2.0",
@@ -32,18 +30,17 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.17",
     "@types/node": "^22.14.0",
+    "@typescript-eslint/eslint-plugin": "^8.48.1",
+    "@typescript-eslint/parser": "^8.48.1",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.22",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.17",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0",
-
-    "eslint": "^9.39.1",
-    "@typescript-eslint/parser": "^8.48.1",
-    "@typescript-eslint/eslint-plugin": "^8.48.1",
-    "eslint-plugin-react": "^7.37.5",
-    "eslint-plugin-react-hooks": "^7.0.1"
+    "vite": "^6.2.0"
   },
   "engines": {
     "node": ">=18.0.0"

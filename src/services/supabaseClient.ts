@@ -3,8 +3,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// 🔍 DEBUG: NO logueamos la key completa, solo si existe
-console.log('[Supabase DEBUG]', {
+console.log('[SUPABASE DEBUG]', {
   supabaseUrl,
   hasAnonKey: !!supabaseAnonKey,
 });
