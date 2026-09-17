@@ -1,0 +1,809 @@
+param(
+    [string]$ProjectRoot = "C:\Users\martin\Desktop\VSC\APPS\ChatMi"
+)
+
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+
+$Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+
+$BackupRoot = Join-Path $ProjectRoot ".hardening-backups\fase5-1-$Stamp"
+$ReportsDir = Join-Path $ProjectRoot "reports"
+$Scanner = Join-Path $ProjectRoot "scripts\evaluar-chatmi-v2.ps1"
+
+New-Item -ItemType Directory -Path $BackupRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $ReportsDir -Force | Out-Null
+
+function Section {
+    param([string]$Text)
+
+    Write-Host ""
+    Write-Host ("=" * 94) -ForegroundColor DarkGray
+    Write-Host " $Text" -ForegroundColor Cyan
+    Write-Host ("=" * 94) -ForegroundColor DarkGray
+}
+
+function OK {
+    param([string]$Text)
+    Write-Host "[OK] $Text" -ForegroundColor Green
+}
+
+function Warn {
+    param([string]$Text)
+    Write-Host "[!]  $Text" -ForegroundColor Yellow
+}
+
+function Fail {
+    param([string]$Text)
+    Write-Host "[X]  $Text" -ForegroundColor Red
+}
+
+function Changed {
+    param([string]$Text)
+    Write-Host "[+]  $Text" -ForegroundColor Magenta
+}
+
+# ============================================================
+# VALIDADORES CORREGIDOS
+#
+# MUY IMPORTANTE:
+# la salida del comando va a archivo.
+# La función devuelve UNICAMENTE $true/$false.
+# ============================================================
+
+function Test-TSC {
+
+    $log = Join-Path $env:TEMP "chatmi-tsc-$PID.txt"
+
+    Push-Location $ProjectRoot
+
+    try {
+
+        & npx tsc --noEmit *> $log
+        $code = $LASTEXITCODE
+
+        if ($code -ne 0) {
+
+            Write-Host ""
+            Write-Host "Errores TypeScript:" -ForegroundColor Red
+
+            Get-Content $log |
+                Select-Object -Last 80 |
+                ForEach-Object {
+                    Write-Host $_ -ForegroundColor DarkYellow
+                }
+        }
+
+        return [bool]($code -eq 0)
+    }
+    finally {
+
+        Pop-Location
+
+        Remove-Item $log `
+            -Force `
+            -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-Tests {
+
+    $log = Join-Path $env:TEMP "chatmi-tests-$PID.txt"
+
+    Push-Location $ProjectRoot
+
+    try {
+
+        & npm test *> $log
+        $code = $LASTEXITCODE
+
+        if ($code -ne 0) {
+
+            Write-Host ""
+            Write-Host "Errores tests:" -ForegroundColor Red
+
+            Get-Content $log |
+                Select-Object -Last 100 |
+                ForEach-Object {
+                    Write-Host $_ -ForegroundColor DarkYellow
+                }
+        }
+
+        return [bool]($code -eq 0)
+    }
+    finally {
+
+        Pop-Location
+
+        Remove-Item $log `
+            -Force `
+            -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-Build {
+
+    $log = Join-Path $env:TEMP "chatmi-build-$PID.txt"
+
+    Push-Location $ProjectRoot
+
+    try {
+
+        & npm run build *> $log
+        $code = $LASTEXITCODE
+
+        if ($code -ne 0) {
+
+            Write-Host ""
+            Write-Host "Errores build:" -ForegroundColor Red
+
+            Get-Content $log |
+                Select-Object -Last 100 |
+                ForEach-Object {
+                    Write-Host $_ -ForegroundColor DarkYellow
+                }
+        }
+
+        return [bool]($code -eq 0)
+    }
+    finally {
+
+        Pop-Location
+
+        Remove-Item $log `
+            -Force `
+            -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-Project {
+
+    Write-Host "    TypeScript..." -ForegroundColor DarkGray
+
+    if (!(Test-TSC)) {
+        return $false
+    }
+
+    Write-Host "    Tests..." -ForegroundColor DarkGray
+
+    if (!(Test-Tests)) {
+        return $false
+    }
+
+    Write-Host "    Build..." -ForegroundColor DarkGray
+
+    if (!(Test-Build)) {
+        return $false
+    }
+
+    return $true
+}
+
+# ============================================================
+# PACKAGE BACKUP
+# ============================================================
+
+function Backup-Packages {
+    param([string]$Destination)
+
+    New-Item `
+        -ItemType Directory `
+        -Path $Destination `
+        -Force |
+        Out-Null
+
+    Copy-Item `
+        (Join-Path $ProjectRoot "package.json") `
+        (Join-Path $Destination "package.json") `
+        -Force
+
+    $lock = Join-Path $ProjectRoot "package-lock.json"
+
+    if (Test-Path $lock) {
+
+        Copy-Item `
+            $lock `
+            (Join-Path $Destination "package-lock.json") `
+            -Force
+    }
+}
+
+function Restore-Packages {
+    param([string]$Source)
+
+    Copy-Item `
+        (Join-Path $Source "package.json") `
+        (Join-Path $ProjectRoot "package.json") `
+        -Force
+
+    $lock = Join-Path $Source "package-lock.json"
+
+    if (Test-Path $lock) {
+
+        Copy-Item `
+            $lock `
+            (Join-Path $ProjectRoot "package-lock.json") `
+            -Force
+    }
+
+    Push-Location $ProjectRoot
+
+    try {
+
+        npm install | Out-Host
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "npm install falló durante rollback."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+# ============================================================
+# AUDIT REAL
+# ============================================================
+
+function Get-AuditState {
+
+    Push-Location $ProjectRoot
+
+    try {
+
+        $raw = (
+            & npm audit --omit=dev --json 2>$null |
+            Out-String
+        )
+
+        $audit = $raw | ConvertFrom-Json
+        $v = $audit.metadata.vulnerabilities
+
+        $critical = [int]$v.critical
+        $high = [int]$v.high
+        $moderate = [int]$v.moderate
+        $low = [int]$v.low
+
+        $score =
+            ($critical * 1000000) +
+            ($high * 10000) +
+            ($moderate * 100) +
+            $low
+
+        $names = @()
+
+        if ($null -ne $audit.vulnerabilities) {
+
+            $names = @(
+                $audit.vulnerabilities.PSObject.Properties |
+                ForEach-Object {
+                    $_.Name
+                }
+            )
+        }
+
+        return [PSCustomObject]@{
+            Critical = $critical
+            High = $high
+            Moderate = $moderate
+            Low = $low
+            Score = $score
+            Names = $names
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Show-Audit {
+    param(
+        [string]$Title,
+        [object]$State
+    )
+
+    Write-Host ""
+    Write-Host $Title -ForegroundColor Yellow
+
+    Write-Host "    Critical : $($State.Critical)"
+    Write-Host "    High     : $($State.High)"
+    Write-Host "    Moderate : $($State.Moderate)"
+    Write-Host "    Low      : $($State.Low)"
+
+    if ($State.Names.Count -gt 0) {
+        Write-Host "    Packages : $($State.Names -join ', ')"
+    }
+}
+
+# ============================================================
+# EXACT OVERRIDE
+# ============================================================
+
+function Set-ExactOverride {
+    param(
+        [string]$From,
+        [string]$To
+    )
+
+    $env:CHATMI_FROM = $From
+    $env:CHATMI_TO = $To
+
+    Push-Location $ProjectRoot
+
+    try {
+
+        node -e @'
+const fs = require("fs");
+
+const file = "package.json";
+const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+
+pkg.overrides ||= {};
+
+pkg.overrides[
+  process.env.CHATMI_FROM
+] = process.env.CHATMI_TO;
+
+fs.writeFileSync(
+  file,
+  JSON.stringify(pkg, null, 2) + "\n"
+);
+'@
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Node no pudo escribir override."
+        }
+    }
+    finally {
+
+        Pop-Location
+
+        Remove-Item Env:CHATMI_FROM `
+            -ErrorAction SilentlyContinue
+
+        Remove-Item Env:CHATMI_TO `
+            -ErrorAction SilentlyContinue
+    }
+}
+
+function Try-Override {
+    param(
+        [string]$PackageName,
+        [string]$FromVersion,
+        [string]$ToVersion
+    )
+
+    Section "FIX $PackageName $FromVersion -> $ToVersion"
+
+    $trial = Join-Path `
+        $BackupRoot `
+        (
+            "trial-" +
+            ($PackageName -replace '[^A-Za-z0-9]', '-')
+        )
+
+    Backup-Packages $trial
+
+    $before = Get-AuditState
+
+    Show-Audit "ANTES" $before
+
+    $overrideKey = "$PackageName@$FromVersion"
+
+    Write-Host ""
+    Write-Host "Aplicando override:" -ForegroundColor Gray
+    Write-Host "    $overrideKey -> $ToVersion" -ForegroundColor Cyan
+
+    Set-ExactOverride `
+        -From $overrideKey `
+        -To $ToVersion
+
+    Push-Location $ProjectRoot
+
+    try {
+
+        npm install | Out-Host
+
+        if ($LASTEXITCODE -ne 0) {
+
+            Warn "npm install rechazó el override."
+
+            Restore-Packages $trial
+
+            return
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    Write-Host ""
+    Write-Host "Validando..." -ForegroundColor Gray
+
+    if (!(Test-Project)) {
+
+        Warn "$PackageName rompe el proyecto. Rollback."
+
+        Restore-Packages $trial
+
+        if (!(Test-Project)) {
+            throw "Rollback falló para $PackageName."
+        }
+
+        OK "Rollback confirmado."
+
+        return
+    }
+
+    $after = Get-AuditState
+
+    Show-Audit "DESPUES" $after
+
+    if ($after.Score -lt $before.Score) {
+
+        Changed "$PackageName@$ToVersion CONSERVADO."
+    }
+    else {
+
+        Warn "No redujo vulnerabilidades. Revirtiendo."
+
+        Restore-Packages $trial
+
+        if (!(Test-Project)) {
+            throw "Rollback falló."
+        }
+    }
+}
+
+# ============================================================
+# START
+# ============================================================
+
+Clear-Host
+
+Write-Host ""
+Write-Host " CHATMI FASE 5.1 — REPARACION + SECURITY" -ForegroundColor Cyan
+Write-Host " Recupera TypeScript y ataca las 4 vulnerabilidades altas" -ForegroundColor White
+Write-Host ""
+
+if (!(Test-Path $ProjectRoot)) {
+    throw "No existe el proyecto."
+}
+
+Set-Location $ProjectRoot
+
+# ============================================================
+# 1. BACKUP ACTUAL ANTES DE TOCAR
+# ============================================================
+
+Section "1. BACKUP ESTADO ACTUAL"
+
+Copy-Item `
+    (Join-Path $ProjectRoot "src") `
+    (Join-Path $BackupRoot "src-before-repair") `
+    -Recurse `
+    -Force
+
+Backup-Packages `
+    (Join-Path $BackupRoot "packages-before-repair")
+
+OK "Backup Fase 5.1 creado."
+
+# ============================================================
+# 2. REPARAR TIMELINE AUTOMATICAMENTE
+# ============================================================
+
+Section "2. REPARANDO TIMELINE.TSX - BUSQUEDA AUTOMATICA"
+
+$currentTimeline = Join-Path `
+    $ProjectRoot `
+    "src\components\Timeline.tsx"
+
+if (!(Test-Path $currentTimeline)) {
+    throw "No existe el Timeline.tsx actual."
+}
+
+# Si por alguna razón ya fue reparado, no tocarlo.
+if (Test-TSC) {
+
+    OK "TypeScript ya está correcto. No fue necesario restaurar Timeline."
+
+}
+else {
+
+    Write-Host ""
+    Write-Host "Timeline actual genera errores TypeScript." -ForegroundColor Yellow
+    Write-Host "Buscando copias históricas válidas..." -ForegroundColor Gray
+
+    $brokenTimelineBackup = Join-Path `
+        $BackupRoot `
+        "Timeline.tsx.before-auto-repair"
+
+    Copy-Item `
+        $currentTimeline `
+        $brokenTimelineBackup `
+        -Force
+
+    $backupBase = Join-Path `
+        $ProjectRoot `
+        ".hardening-backups"
+
+    $repaired = $false
+    $chosenSource = $null
+
+    # --------------------------------------------------------
+    # A. BUSCAR RECURSIVAMENTE TODOS LOS Timeline.tsx
+    # --------------------------------------------------------
+
+    $candidates = @()
+
+    if (Test-Path $backupBase) {
+
+        $candidates = @(
+            Get-ChildItem `
+                -LiteralPath $backupBase `
+                -Recurse `
+                -File `
+                -Filter "Timeline.tsx" `
+                -ErrorAction SilentlyContinue |
+            Where-Object {
+
+                $_.FullName -ne $currentTimeline -and
+
+                # Evitar específicamente la copia rota que acabamos
+                # de respaldar en esta misma Fase 5.1.
+                $_.FullName -ne $brokenTimelineBackup
+            } |
+            Sort-Object `
+                LastWriteTime `
+                -Descending
+        )
+    }
+
+    Write-Host ""
+    Write-Host (
+        "Copias Timeline encontradas: {0}" -f
+        $candidates.Count
+    ) -ForegroundColor Cyan
+
+    foreach ($candidate in $candidates) {
+
+        Write-Host ""
+        Write-Host "Probando:" -ForegroundColor Gray
+        Write-Host "  $($candidate.FullName)" -ForegroundColor DarkGray
+
+        Copy-Item `
+            $candidate.FullName `
+            $currentTimeline `
+            -Force
+
+        if (Test-TSC) {
+
+            $repaired = $true
+            $chosenSource = $candidate.FullName
+
+            Write-Host ""
+            OK "Timeline válido encontrado."
+
+            Write-Host "Fuente:" -ForegroundColor White
+            Write-Host "  $chosenSource" -ForegroundColor Green
+
+            break
+        }
+
+        Write-Host "  [NO] Esa copia también falla." -ForegroundColor DarkYellow
+    }
+
+    # --------------------------------------------------------
+    # B. SI NINGUN BACKUP SIRVE, PROBAR GIT HEAD
+    # --------------------------------------------------------
+
+    if (!$repaired) {
+
+        Write-Host ""
+        Write-Host "No encontré backup válido. Probando Git HEAD..." -ForegroundColor Yellow
+
+        $git = Get-Command git -ErrorAction SilentlyContinue
+
+        if ($git) {
+
+            $gitOutput = @(
+                & git `
+                    -C $ProjectRoot `
+                    show `
+                    "HEAD:src/components/Timeline.tsx" `
+                    2>$null
+            )
+
+            $gitCode = $LASTEXITCODE
+
+            if (
+                $gitCode -eq 0 -and
+                $gitOutput.Count -gt 0
+            ) {
+
+                $gitText = [string]::Join(
+                    [Environment]::NewLine,
+                    $gitOutput
+                )
+
+                Set-Content `
+                    -LiteralPath $currentTimeline `
+                    -Value $gitText `
+                    -Encoding UTF8
+
+                if (Test-TSC) {
+
+                    $repaired = $true
+                    $chosenSource = "git:HEAD:src/components/Timeline.tsx"
+
+                    OK "Timeline recuperado desde Git HEAD."
+                }
+            }
+        }
+    }
+
+    # --------------------------------------------------------
+    # C. VALIDACION
+    # --------------------------------------------------------
+
+    if (!$repaired) {
+
+        Write-Host ""
+        Write-Host "[ERROR] Ninguna copia histórica compiló." -ForegroundColor Red
+
+        Write-Host "Restaurando Timeline roto original para no alterar estado..." -ForegroundColor Yellow
+
+        Copy-Item `
+            $brokenTimelineBackup `
+            $currentTimeline `
+            -Force
+
+        throw "No se pudo localizar automáticamente un Timeline.tsx válido."
+    }
+
+    Write-Host ""
+    Write-Host "Timeline reparado desde:" -ForegroundColor White
+    Write-Host "  $chosenSource" -ForegroundColor Cyan
+}
+
+# ============================================================
+
+# 3. CONFIRMAR TSC REAL
+# ============================================================
+
+Section "3. TYPESCRIPT REAL"
+
+if (!(Test-TSC)) {
+
+    Fail "TypeScript todavía tiene errores."
+
+    throw "No continúo hasta recuperar TypeScript."
+}
+
+OK "TypeScript: 0 errores REALES."
+
+# ============================================================
+# 4. CONFIRMAR TESTS Y BUILD
+# ============================================================
+
+Section "4. BASELINE RECUPERADO"
+
+if (!(Test-Project)) {
+    throw "El proyecto no recuperó baseline."
+}
+
+OK "TypeScript + 10 tests + build = OK."
+
+# ============================================================
+# 5. AUDIT INICIAL
+# ============================================================
+
+Section "5. AUDIT INICIAL"
+
+$initial = Get-AuditState
+
+Show-Audit "ESTADO INICIAL" $initial
+
+# ============================================================
+# 6. BRACE-EXPANSION 2.x
+# ============================================================
+
+Try-Override `
+    -PackageName "brace-expansion" `
+    -FromVersion "2.0.2" `
+    -ToVersion "2.1.4"
+
+# ============================================================
+# 7. MINIMATCH 9.x
+# ============================================================
+
+Try-Override `
+    -PackageName "minimatch" `
+    -FromVersion "9.0.5" `
+    -ToVersion "9.0.7"
+
+# ============================================================
+# 8. PATH-TO-REGEXP 8.x
+# ============================================================
+
+Try-Override `
+    -PackageName "path-to-regexp" `
+    -FromVersion "8.3.0" `
+    -ToVersion "8.4.0"
+
+# ============================================================
+# 9. WS 8.x
+# ============================================================
+
+Try-Override `
+    -PackageName "ws" `
+    -FromVersion "8.18.3" `
+    -ToVersion "8.21.0"
+
+# ============================================================
+# 10. VALIDACION FINAL
+# ============================================================
+
+Section "10. VALIDACION FINAL"
+
+if (!(Test-Project)) {
+
+    Fail "Proyecto inválido al final."
+
+    throw "No se acepta la Fase 5.1."
+}
+
+OK "TypeScript: OK"
+OK "Tests: OK"
+OK "Build: OK"
+
+# ============================================================
+# 11. AUDIT FINAL
+# ============================================================
+
+Section "11. AUDIT PRODUCCION FINAL"
+
+$final = Get-AuditState
+
+Show-Audit "ESTADO FINAL" $final
+
+$AuditFile = Join-Path `
+    $ReportsDir `
+    "audit-fase5-1-$Stamp.txt"
+
+npm audit --omit=dev |
+    Tee-Object `
+        -FilePath $AuditFile
+
+# ============================================================
+# 12. SCANNER REAL
+# ============================================================
+
+Section "12. PUNTUACION CHATMI"
+
+if (Test-Path $Scanner) {
+
+    powershell `
+        -ExecutionPolicy Bypass `
+        -File $Scanner `
+        -ProjectRoot $ProjectRoot
+}
+else {
+
+    Warn "No encontré evaluar-chatmi-v2.ps1."
+}
+
+# ============================================================
+# RESULTADO
+# ============================================================
+
+Section "FASE 5.1 COMPLETADA"
+
+Write-Host ""
+Write-Host "Backup:" -ForegroundColor White
+Write-Host $BackupRoot -ForegroundColor Cyan
+
+Write-Host ""
+Write-Host "Audit:" -ForegroundColor White
+Write-Host $AuditFile -ForegroundColor Cyan
