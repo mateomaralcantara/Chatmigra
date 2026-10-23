@@ -28,7 +28,7 @@ interface QuotaReservation {
   reserved?: number;
 }
 
-const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || 'gemini-3.8-flash';
+const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash';
 const FREE_TOKENS_MAX = 3000;
 
 function readBody(body: unknown): Record<string, unknown> {

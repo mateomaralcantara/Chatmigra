@@ -51,9 +51,9 @@ alter table public.subscriptions add column if not exists has_used_free boolean 
 alter table public.subscriptions add column if not exists created_at timestamptz not null default now();
 alter table public.subscriptions add column if not exists updated_at timestamptz not null default now();
 
-create unique index if not exists subscriptions_user_id_uidx
-  on public.subscriptions(user_id)
-  where user_id is not null;
+-- Deliberately no UNIQUE(user_id) migration here: legacy installations may
+-- contain more than one historical subscription row per email/user. The
+-- server updates the current row without deleting historical records.
 
 create table if not exists public.account_quotas (
   user_id uuid primary key references auth.users(id) on delete cascade,
