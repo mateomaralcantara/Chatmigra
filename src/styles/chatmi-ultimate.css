@@ -1282,3 +1282,18 @@ button {
     transition-duration: .001ms !important;
   }
 }
+
+/* Estados de funciones aún no disponibles */
+.cm-main-nav button:disabled,
+.cm-tools-panel button:disabled,
+.cm-files-button:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+  filter: saturate(0.65);
+}
+
+.cm-main-nav button:disabled:hover,
+.cm-tools-panel button:disabled:hover,
+.cm-files-button:disabled:hover {
+  transform: none;
+}
