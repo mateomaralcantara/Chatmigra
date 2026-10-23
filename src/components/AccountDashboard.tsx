@@ -231,7 +231,7 @@ const AccountDashboard: React.FC<AccountDashboardProps> = ({
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Próxima factura:</span>
+                  <span className="text-gray-400">Última actualización:</span>
                   <span className="font-medium">
                     {subscription?.currentPeriodEnd ?? '—'}
                   </span>
@@ -344,7 +344,7 @@ const AccountDashboard: React.FC<AccountDashboardProps> = ({
                         <p className="font-medium text-gray-100">
                           {formatEventType(event.type)}
                         </p>
-                        {event.metadata?.source && (
+                        {typeof event.metadata?.source === 'string' && (
                           <p className="text-xs text-gray-400">
                             Origen: {event.metadata.source}
                           </p>
