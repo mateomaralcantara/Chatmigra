@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { supabase } from '../services/supabaseClient';
 
 interface ImageSupportProps {
   query: string;
@@ -16,57 +17,68 @@ const ImageSupport: React.FC<ImageSupportProps> = ({ query, count = 1 }) => {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchImages = async () => {
+    let active = true;
+
+    void (async () => {
       try {
         setLoading(true);
         setError('');
 
-        const res = await fetch(
-          `/api/image-search?q=${encodeURIComponent(query)}&n=${count}`
-        );
-        if (!res.ok) throw new Error('Error buscando imágenes');
-        const data = await res.json();
-        setImages(data.results || []);
-      } catch (e) {
-        console.error(e);
-        setError('No se pudieron cargar las imágenes de apoyo.');
-      } finally {
-        setLoading(false);
-      }
-    };
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
-    fetchImages();
+        if (!session?.access_token) {
+          throw new Error('Sesión no disponible');
+        }
+
+        const response = await fetch(
+          `/api/image-search?q=${encodeURIComponent(query)}&n=${count}`,
+          {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          },
+        );
+
+        const data = (await response.json().catch(() => ({}))) as {
+          results?: ImageResult[];
+          error?: string;
+        };
+
+        if (!response.ok) {
+          throw new Error(data.error || 'No se pudo buscar la imagen');
+        }
+
+        if (active) setImages(data.results || []);
+      } catch (caught) {
+        console.warn('[ImageSupport]', caught);
+        if (active) {
+          setError('No se pudieron cargar imágenes de apoyo.');
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
   }, [query, count]);
 
   if (loading) {
-    return (
-      <p className="mt-2 text-xs text-gray-400">
-        Buscando imagen relacionada…
-      </p>
-    );
+    return <p className="mt-2 text-xs text-gray-400">Buscando imagen relacionada…</p>;
   }
 
-  if (error) {
-    return (
-      <p className="mt-2 text-xs text-red-400">
-        {error}
-      </p>
-    );
-  }
-
-  if (!images.length) {
-    return (
-      <p className="mt-2 text-xs text-gray-400">
-        No encontré imágenes para esta consulta.
-      </p>
-    );
+  if (error || images.length === 0) {
+    return null;
   }
 
   const mainImage = images[0];
 
   return (
     <div className="mt-4">
-      <div className="rounded-2xl overflow-hidden border border-slate-200/70 bg-slate-100 w-full">
+      <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 w-full">
         <img
           src={mainImage.url}
           alt={mainImage.title || query}
@@ -74,14 +86,6 @@ const ImageSupport: React.FC<ImageSupportProps> = ({ query, count = 1 }) => {
           loading="lazy"
         />
       </div>
-      {mainImage.title && (
-        <p className="mt-2 text-xs text-gray-500">
-          Imagen relacionada con:{' '}
-          <span className="font-semibold text-gray-700">
-            {mainImage.title}
-          </span>
-        </p>
-      )}
     </div>
   );
 };

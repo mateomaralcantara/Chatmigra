@@ -4,6 +4,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import AuthWrapper from './AuthWrapper';
 import AdminApp from './src/AdminApp';
+import ResetPassword from './src/components/ResetPassword';
 import PremiumShell from './src/ui/PremiumShell';
 
 const rootElement = document.getElementById('root');
@@ -17,7 +18,9 @@ const path = window.location.pathname;
 
 root.render(
   <React.StrictMode>
-    {path.startsWith('/admin') ? (
+    {path.startsWith('/reset-password') ? (
+      <ResetPassword />
+    ) : path.startsWith('/admin') ? (
       <AdminApp />
     ) : (
       <PremiumShell>

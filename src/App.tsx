@@ -1,20 +1,20 @@
 import './index.css';
 import React, {
-  useState,
-  useEffect,
   useCallback,
-  useRef,
+  useEffect,
   useMemo,
+  useRef,
+  useState,
 } from 'react';
-import { ChatMessage, Plan, Conversation, User } from './types';
-import { runChatStream, connectToVoiceAgent } from './services/geminiService';
+import { type ChatMessage, type Conversation, Plan, type User } from './types';
+import { connectToVoiceAgent, runChatStream } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
-import ChatWindow from './components/ChatWindow';
-import ChatInput from './components/ChatInput';
-import ConversationHistory from './components/ConversationHistory';
-import VoiceAgentOverlay from './components/VoiceAgentOverlay';
 import AccountDashboard from './components/AccountDashboard';
+import ChatInput from './components/ChatInput';
+import ChatWindow from './components/ChatWindow';
+import ConversationHistory from './components/ConversationHistory';
 import SuggestedPrompts from './components/SuggestedPrompts';
+import VoiceAgentOverlay from './components/VoiceAgentOverlay';
 import { logActivity } from './services/activityService';
 
 type View = 'chat' | 'dashboard';
@@ -39,38 +39,24 @@ interface AppProps {
 const INITIAL_MESSAGE: ChatMessage = {
   role: 'model',
   content:
-    '¡Hola! Soy **ChatMig**, tu asistente migratorio. ¿Cómo puedo orientarte hoy? Selecciona una conversación anterior o inicia un nuevo chat.',
+    '¡Hola! Soy ChatMi, tu asistente migratorio. ¿Cómo puedo orientarte hoy?',
 };
 
 const NEW_CONVERSATION_MESSAGE: ChatMessage = {
   role: 'model',
   content:
-    '¡Hola! Soy **ChatMig**, tu asistente migratorio. ¿Cómo puedo orientarte hoy? Cuéntame tu país de ciudadanía, país de destino y tu objetivo (turismo, trabajo, estudios, etc.).',
+    '¡Hola! Soy ChatMi. Cuéntame tu país de ciudadanía, país de destino y tu objetivo migratorio.',
 };
 
-// Texto que se adjunta a cada respuesta cuando el plan es FREE
-const FREE_UPSELL_SUFFIX = `
----
-
-🔓 Estás usando la versión GRATUITA de ChatMig (respuestas limitadas).
-Activa el plan **PREMIUM** para respuestas más extensas, acceso al agente de voz
-y todas las mejoras continuas del asistente.`;
-
-const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
-  // ---------- ESTADO PRINCIPAL ----------
-
-  const [currentPlan, setCurrentPlan] = useState<Plan>(() => plan);
-
-  useEffect(() => {
-    setCurrentPlan(plan);
-  }, [plan]);
-
+const App: React.FC<AppProps> = ({
+  user,
+  plan,
+  onLogout,
+  initialView,
+}) => {
+  const [currentPlan, setCurrentPlan] = useState<Plan>(plan);
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
   const messagesRef = useRef<ChatMessage[]>([INITIAL_MESSAGE]);
-
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] =
@@ -82,7 +68,6 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
   const [focusPremium, setFocusPremium] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-  // Voice agent
   const [isVoiceAgentActive, setIsVoiceAgentActive] = useState(false);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle');
   const [liveTranscription, setLiveTranscription] =
@@ -92,59 +77,66 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
   const userTranscriptionRef = useRef('');
   const modelTranscriptionRef = useRef('');
 
-  // ---------- HELPERS ----------
+  useEffect(() => {
+    setCurrentPlan(plan);
+  }, [plan]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const clearModelPlaceholderIfEmpty = useCallback(() => {
-    setMessages(prev => {
-      const last = prev[prev.length - 1];
-      if (last && last.role === 'model' && !last.content) {
-        return prev.slice(0, -1);
-      }
-      return prev;
+    setMessages((previous) => {
+      const last = previous[previous.length - 1];
+      return last?.role === 'model' && !last.content
+        ? previous.slice(0, -1)
+        : previous;
     });
   }, []);
 
   const appendModelChunk = useCallback((text: string) => {
-    setMessages(prev => {
-      const last = prev[prev.length - 1];
-      if (!last || last.role !== 'model') return prev;
-      return [...prev.slice(0, -1), { ...last, content: last.content + text }];
+    setMessages((previous) => {
+      const last = previous[previous.length - 1];
+      if (!last || last.role !== 'model') return previous;
+
+      return [
+        ...previous.slice(0, -1),
+        {
+          ...last,
+          content: last.content + text,
+        },
+      ];
     });
   }, []);
 
-  // ---------- CARGA DE HISTORIAL ----------
-
   const fetchConversations = useCallback(async () => {
     try {
-      setError(null);
-
-      const { data, error } = await supabase
+      const { data, error: conversationsError } = await supabase
         .from('conversations')
-        .select('id, created_at, title')
-        .eq('user_email', user.email)
+        .select('id,created_at,title')
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching conversations:', error);
-        setError(
-          'No se pudo cargar el historial de conversaciones. Verifica que las tablas de Supabase estén configuradas.'
+      if (conversationsError) {
+        console.warn(
+          '[conversations] Historial no disponible; el chat seguirá funcionando:',
+          conversationsError.message,
         );
+        setConversations([]);
         return;
       }
 
-      setConversations((data as Conversation[]) || []);
-    } catch (e) {
-      console.error('Error inesperado cargando conversaciones:', e);
-      setError('Error inesperado al cargar el historial.');
+      setConversations((data || []) as Conversation[]);
+    } catch (caught) {
+      console.warn('[conversations] Historial omitido:', caught);
+      setConversations([]);
     }
-  }, [user.email]);
+  }, []);
 
   useEffect(() => {
-    if (currentView !== 'chat') return;
-    fetchConversations();
+    if (currentView === 'chat') {
+      void fetchConversations();
+    }
   }, [currentView, fetchConversations]);
-
-  // ---------- MANEJO DE CONVERSACIONES ----------
 
   const handleNewConversation = useCallback(() => {
     setCurrentConversationId(null);
@@ -159,41 +151,111 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
 
       setIsLoading(true);
       setError(null);
-      setCurrentConversationId(id);
       setIsHistoryOpen(false);
 
       try {
-        const { data, error } = await supabase
+        const { data, error: messagesError } = await supabase
           .from('messages')
-          .select('role, content')
+          .select('role,content')
           .eq('conversation_id', id)
           .order('created_at', { ascending: true });
 
-        if (error) {
-          console.error('Error fetching messages:', error);
-          setError('No se pudieron cargar los mensajes de esta conversación.');
-          setMessages([]);
-          return;
+        if (messagesError) {
+          throw messagesError;
         }
 
-        const loadedMessages: ChatMessage[] = (data || []).map((m: any) => ({
-          role: m.role as 'user' | 'model',
-          content: m.content,
-        }));
+        const loaded: ChatMessage[] = (data || [])
+          .filter(
+            (message) =>
+              (message.role === 'user' || message.role === 'model') &&
+              typeof message.content === 'string',
+          )
+          .map((message) => ({
+            role: message.role as 'user' | 'model',
+            content: String(message.content),
+          }));
 
-        setMessages(loadedMessages.length ? loadedMessages : [INITIAL_MESSAGE]);
-      } catch (e) {
-        console.error('Error inesperado cargando mensajes:', e);
-        setError('Ocurrió un error al cargar los mensajes.');
-        setMessages([]);
+        setCurrentConversationId(id);
+        setMessages(loaded.length > 0 ? loaded : [INITIAL_MESSAGE]);
+      } catch (caught) {
+        console.error('[history] No se pudo abrir conversación:', caught);
+        setError('No se pudo abrir esa conversación. Puedes continuar en un chat nuevo.');
       } finally {
         setIsLoading(false);
       }
     },
-    [isLoading]
+    [isLoading],
   );
 
-  // ---------- ENVIAR MENSAJE / GEMINI STREAM ----------
+  const persistUserMessage = useCallback(
+    async (
+      text: string,
+      title: string,
+    ): Promise<{ conversationId: string | null; authUserId: string | null }> => {
+      try {
+        const {
+          data: { user: authUser },
+        } = await supabase.auth.getUser();
+
+        if (!authUser) {
+          return { conversationId: null, authUserId: null };
+        }
+
+        let conversationId = currentConversationId;
+
+        if (!conversationId) {
+          const { data, error: conversationError } = await supabase
+            .from('conversations')
+            .insert({
+              user_id: authUser.id,
+              user_email: authUser.email ?? user.email,
+              title,
+            })
+            .select('id,created_at,title')
+            .single();
+
+          if (conversationError || !data) {
+            console.warn(
+              '[persistence] No se pudo crear conversación; Gemini continuará:',
+              conversationError?.message,
+            );
+            return { conversationId: null, authUserId: authUser.id };
+          }
+
+          conversationId = String(data.id);
+          setCurrentConversationId(conversationId);
+          setConversations((previous) => [
+            {
+              id: conversationId,
+              created_at: String(data.created_at),
+              title: data.title ?? title,
+            },
+            ...previous,
+          ]);
+        }
+
+        const { error: messageError } = await supabase.from('messages').insert({
+          conversation_id: conversationId,
+          user_id: authUser.id,
+          role: 'user',
+          content: text,
+        });
+
+        if (messageError) {
+          console.warn(
+            '[persistence] Mensaje de usuario no guardado:',
+            messageError.message,
+          );
+        }
+
+        return { conversationId, authUserId: authUser.id };
+      } catch (caught) {
+        console.warn('[persistence] Persistencia degradada:', caught);
+        return { conversationId: null, authUserId: null };
+      }
+    },
+    [currentConversationId, user.email],
+  );
 
   const handleSendMessage = useCallback(
     async (inputText: string) => {
@@ -204,171 +266,80 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
       setIsLoading(true);
 
       const isNewConversation = !currentConversationId;
-      const newUserMessage: ChatMessage = { role: 'user', content: text };
-
+      const userMessage: ChatMessage = { role: 'user', content: text };
       const baseMessages = isNewConversation ? [] : messagesRef.current;
-      const updatedMessages = [...baseMessages, newUserMessage];
+      const updatedMessages = [...baseMessages, userMessage];
+      const title = text.replace(/\s+/g, ' ').slice(0, 80);
 
-      setMessages(updatedMessages);
+      setMessages([...updatedMessages, { role: 'model', content: '' }]);
 
-      // Log actividad: mensaje enviado
-      logActivity({
+      const persistencePromise = persistUserMessage(text, title);
+
+      void logActivity({
         userEmail: user.email,
         type: 'chat_message_sent',
         metadata: { plan: currentPlan, length: text.length },
-      }).catch(err =>
-        console.error('Error registrando actividad (sent):', err)
-      );
-
-      const conversationTitle = text.replace(/\s+/g, ' ').trim().slice(0, 80);
-      let convId = currentConversationId;
+      });
 
       try {
-        // Crear conversación si no existe
-        if (!convId) {
-          const { data, error } = await supabase
-            .from('conversations')
-            .insert([{ user_email: user.email, title: conversationTitle }])
-            .select('id, created_at, title')
-            .single();
+        const stream = runChatStream(updatedMessages, currentPlan);
+        let fullResponse = '';
 
-          if (error || !data) {
-            console.error('Error al crear conversación:', error);
-            setError('Error al crear una nueva conversación.');
-            setIsLoading(false);
-            return;
-          }
-
-          convId = data.id;
-          setCurrentConversationId(convId);
-          setConversations(prev => [
-            {
-              id: convId!,
-              created_at: data.created_at,
-              title: data.title ?? conversationTitle,
-            },
-            ...prev,
-          ]);
+        for await (const chunk of stream) {
+          if (!chunk.text) continue;
+          fullResponse += chunk.text;
+          appendModelChunk(chunk.text);
         }
 
-        // Guardar mensaje de usuario
-        const { error: insertUserError } = await supabase
-          .from('messages')
-          .insert([
-            {
-              conversation_id: convId,
-              role: 'user',
-              content: text,
-            },
-          ]);
-
-        if (insertUserError) {
-          console.error('Error guardando mensaje de usuario:', insertUserError);
+        if (!fullResponse) {
+          clearModelPlaceholderIfEmpty();
+          throw new Error('Gemini no devolvió contenido.');
         }
 
-        // Placeholder del modelo
-        setMessages(prev => [...prev, { role: 'model', content: '' }]);
+        const persistence = await persistencePromise;
 
-        const stream = await runChatStream(updatedMessages, currentPlan);
-        let fullModelResponse = '';
-
-        for await (const chunk of stream as any) {
-          let chunkText = '';
-
-          if (typeof chunk.text === 'function') {
-            chunkText = chunk.text();
-          } else if (typeof chunk.text === 'string') {
-            chunkText = chunk.text;
-          }
-
-          if (!chunkText) continue;
-
-          fullModelResponse += chunkText;
-          appendModelChunk(chunkText);
-        }
-
-        if (fullModelResponse) {
-          // Bloque de imágenes
-          const imageBlock = `
-
-<image-json>${JSON.stringify({
-            query: text,
-            cantidad: 3,
-          })}</image-json>`;
-
-          // Para FREE: añadir invitación a pasar a PREMIUM
-          let finalContent = fullModelResponse;
-
-          if (currentPlan === Plan.FREE) {
-            finalContent += FREE_UPSELL_SUFFIX;
-          }
-
-          finalContent += imageBlock;
-
-          setMessages(prev => {
-            const last = prev[prev.length - 1];
-            if (!last || last.role !== 'model') return prev;
-
-            return [
-              ...prev.slice(0, -1),
-              { ...last, content: finalContent },
-            ];
+        if (persistence.conversationId && persistence.authUserId) {
+          const { error: saveModelError } = await supabase.from('messages').insert({
+            conversation_id: persistence.conversationId,
+            user_id: persistence.authUserId,
+            role: 'model',
+            content: fullResponse,
           });
 
-          const { error: insertModelError } = await supabase
-            .from('messages')
-            .insert([
-              {
-                conversation_id: convId,
-                role: 'model',
-                content: finalContent,
-              },
-            ]);
-
-          if (insertModelError) {
-            console.error(
-              'Error guardando mensaje del modelo:',
-              insertModelError
+          if (saveModelError) {
+            console.warn(
+              '[persistence] Respuesta no guardada:',
+              saveModelError.message,
             );
           }
-
-          // Log actividad: respuesta del modelo
-          logActivity({
-            userEmail: user.email,
-            type: 'chat_message_answered',
-            metadata: { plan: currentPlan, model: 'gemini' },
-          }).catch(err =>
-            console.error('Error registrando actividad (answered):', err)
-          );
-        } else {
-          // Si Gemini no devolvió nada, limpiamos el placeholder
-          clearModelPlaceholderIfEmpty();
         }
-      } catch (e: unknown) {
-        const errMsg =
-          e instanceof Error ? e.message : 'Ocurrió un error inesperado.';
-        console.error('Gemini API Error:', errMsg);
 
-        setError(
-          `Lo siento, ocurrió un error. Por favor, intenta de nuevo. (${errMsg})`
-        );
+        void logActivity({
+          userEmail: user.email,
+          type: 'chat_message_answered',
+          metadata: { plan: currentPlan, model: 'gemini' },
+        });
+      } catch (caught) {
+        const message =
+          caught instanceof Error ? caught.message : 'Ocurrió un error inesperado.';
 
+        console.error('[chat]', caught);
         clearModelPlaceholderIfEmpty();
+        setError(message);
       } finally {
         setIsLoading(false);
       }
     },
     [
-      isLoading,
-      currentConversationId,
-      currentPlan,
-      user.email,
       appendModelChunk,
       clearModelPlaceholderIfEmpty,
-    ]
+      currentConversationId,
+      currentPlan,
+      isLoading,
+      persistUserMessage,
+      user.email,
+    ],
   );
-
-  // ---------- VOICE AGENT ----------
 
   const stopVoiceAgent = useCallback(
     async (sendTranscript: boolean) => {
@@ -382,8 +353,9 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
         const modelText = modelTranscriptionRef.current.trim();
 
         if (userText || modelText) {
-          const transcript = `**Transcripción de la conversación de voz:**\n\n**Tú:** ${userText}\n\n**ChatMig:** ${modelText}`;
-          await handleSendMessage(transcript);
+          await handleSendMessage(
+            `Transcripción de voz\n\nTú: ${userText}\n\nChatMi: ${modelText}`,
+          );
         }
       }
 
@@ -391,15 +363,12 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
       modelTranscriptionRef.current = '';
       setLiveTranscription({ user: '', model: '' });
     },
-    [handleSendMessage]
+    [handleSendMessage],
   );
 
   const toggleVoiceAgent = useCallback(async () => {
-    // Bloqueo total del agente de voz para plan FREE
     if (currentPlan === Plan.FREE) {
-      setError(
-        'El agente de voz está disponible solo en el plan PREMIUM. Actualiza tu plan para usarlo.'
-      );
+      setError('La conversación por voz está disponible en Premium.');
       setFocusPremium(true);
       setCurrentView('dashboard');
       return;
@@ -413,34 +382,30 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
     try {
       setAgentStatus('connecting');
       setIsVoiceAgentActive(true);
-      setLiveTranscription({ user: '', model: '' });
 
       const session = await connectToVoiceAgent(
         {
           onOpen: () => setAgentStatus('listening'),
-          onUserTranscription: text => {
+          onUserTranscription: (text) => {
             userTranscriptionRef.current += text;
-            setLiveTranscription(prev => ({
-              ...prev,
+            setLiveTranscription((previous) => ({
+              ...previous,
               user: userTranscriptionRef.current,
             }));
           },
-          onModelTranscription: text => {
+          onModelTranscription: (text) => {
             modelTranscriptionRef.current += text;
-            setLiveTranscription(prev => ({
-              ...prev,
+            setLiveTranscription((previous) => ({
+              ...previous,
               model: modelTranscriptionRef.current,
             }));
           },
-          onModelSpeaking: isSpeaking =>
-            setAgentStatus(isSpeaking ? 'speaking' : 'listening'),
-          onTurnComplete: () => {
-            userTranscriptionRef.current = '';
-            modelTranscriptionRef.current = '';
-          },
-          onError: e => {
-            console.error('Voice Agent Error:', e);
-            setError('Error en la conexión de voz.');
+          onModelSpeaking: (speaking) =>
+            setAgentStatus(speaking ? 'speaking' : 'listening'),
+          onTurnComplete: () => undefined,
+          onError: (voiceError) => {
+            console.error('[voice]', voiceError);
+            setError('La conversación por voz encontró un error.');
             setAgentStatus('error');
           },
           onClose: () => {
@@ -448,21 +413,21 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
             setIsVoiceAgentActive(false);
           },
         },
-        currentPlan
+        currentPlan,
       );
 
       sessionRef.current = session as VoiceSession;
-    } catch (e) {
-      console.error('Failed to start voice agent', e);
+    } catch (caught) {
+      console.error('[voice] inicio falló:', caught);
       setError(
-        'No se pudo iniciar el agente de voz. Asegúrate de permitir el acceso al micrófono.'
+        caught instanceof Error
+          ? caught.message
+          : 'No se pudo iniciar la conversación por voz.',
       );
       setIsVoiceAgentActive(false);
       setAgentStatus('error');
     }
-  }, [isVoiceAgentActive, currentPlan, stopVoiceAgent]);
-
-  // ---------- IR DIRECTO A PLAN PREMIUM (UPGRADE) ----------
+  }, [currentPlan, isVoiceAgentActive, stopVoiceAgent]);
 
   const goToPremiumPlan = useCallback(() => {
     setCurrentView('dashboard');
@@ -477,15 +442,9 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
         setCurrentView(detail);
       }
     };
-    const onVoice = () => {
-      void toggleVoiceAgent();
-    };
-    const onUpgrade = () => {
-      goToPremiumPlan();
-    };
-    const onHistory = () => {
-      setIsHistoryOpen((open) => !open);
-    };
+    const onVoice = () => void toggleVoiceAgent();
+    const onUpgrade = () => goToPremiumPlan();
+    const onHistory = () => setIsHistoryOpen((open) => !open);
 
     window.addEventListener('chatmi:new-chat', onNewChat);
     window.addEventListener('chatmi:navigate', onNavigate);
@@ -500,20 +459,12 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
       window.removeEventListener('chatmi:upgrade', onUpgrade);
       window.removeEventListener('chatmi:history', onHistory);
     };
-  }, [
-    handleNewConversation,
-    toggleVoiceAgent,
-    goToPremiumPlan,
-  ]);
-
-  // ---------- DERIVADOS ----------
+  }, [goToPremiumPlan, handleNewConversation, toggleVoiceAgent]);
 
   const showSuggestions = useMemo(
     () => !currentConversationId && messages.length <= 1 && !isLoading,
-    [currentConversationId, messages.length, isLoading]
+    [currentConversationId, isLoading, messages.length],
   );
-
-  // ---------- RENDER ----------
 
   return (
     <div className="cm-app">
@@ -547,6 +498,8 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
                 Pregunta sobre visas, residencia, documentos, entrevistas o próximos pasos.
               </p>
 
+              {error && <div className="cm-inline-error">{error}</div>}
+
               <div className="cm-home-composer">
                 <ChatInput
                   onSendMessage={handleSendMessage}
@@ -554,7 +507,6 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
                   onToggleVoice={toggleVoiceAgent}
                   isVoiceActive={isVoiceAgentActive}
                 />
-
                 <SuggestedPrompts onSendMessage={handleSendMessage} />
               </div>
             </section>
@@ -568,11 +520,7 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
                 onGoToUpgrade={goToPremiumPlan}
               />
 
-              {error && (
-                <div className="cm-inline-error">
-                  {error}
-                </div>
-              )}
+              {error && <div className="cm-inline-error">{error}</div>}
 
               <div className="cm-chat-composer-dock">
                 <ChatInput
@@ -602,6 +550,7 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
               user={user}
               plan={currentPlan}
               onPlanChange={setCurrentPlan}
+              onLogout={onLogout}
               focusPremium={focusPremium}
             />
           </div>

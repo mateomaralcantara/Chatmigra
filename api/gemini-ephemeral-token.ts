@@ -1,6 +1,7 @@
-interface ApiRequest {
-  method?: string;
-}
+import {
+  requireAuthenticatedUser,
+  type RequestLike,
+} from '../server/supabase';
 
 interface ApiResponse {
   status(code: number): ApiResponse;
@@ -10,16 +11,22 @@ interface ApiResponse {
 
 const LIVE_MODEL = process.env.GEMINI_LIVE_MODEL || 'gemini-3.8-live';
 
-export default async function handler(req: ApiRequest, res: ApiResponse) {
+export default async function handler(
+  req: RequestLike & { method?: string },
+  res: ApiResponse,
+) {
   res.setHeader?.('Cache-Control', 'no-store');
 
-  if (req.method && req.method !== 'POST') {
+  if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const apiKey =
-    process.env.GEMINI_API_KEY ||
-    process.env.VITE_GEMINI_API_KEY;
+  const auth = await requireAuthenticatedUser(req);
+  if (!auth) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
 
   if (!apiKey) {
     return res.status(500).json({
@@ -29,6 +36,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   try {
+    const { data: subscription } = await auth.supabase
+      .from('subscriptions')
+      .select('plan,status')
+      .eq('user_id', auth.user.id)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (subscription?.plan !== 'premium' && subscription?.plan !== 'pro') {
+      return res.status(403).json({
+        error: 'La conversación por voz requiere un plan Premium.',
+        code: 'PREMIUM_REQUIRED',
+      });
+    }
+
     const now = Date.now();
     const payload = {
       uses: 1,
@@ -47,16 +68,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     );
 
     const raw = await response.text();
-    let data: any;
-
-    try {
-      data = raw ? JSON.parse(raw) : {};
-    } catch {
-      data = { raw };
-    }
+    const data = raw ? (JSON.parse(raw) as any) : {};
 
     if (!response.ok || typeof data?.name !== 'string') {
-      console.error('[gemini-live] Token creation failed', response.status, data);
       return res.status(response.ok ? 502 : response.status).json({
         error: data?.error?.message || 'Unable to create Gemini ephemeral token',
         code: data?.error?.status || 'GEMINI_LIVE_TOKEN_ERROR',
