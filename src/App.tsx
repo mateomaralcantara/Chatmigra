@@ -17,10 +17,7 @@ import VoiceAgentOverlay from './components/VoiceAgentOverlay';
 import AccountDashboard from './components/AccountDashboard';
 import SuggestedPrompts from './components/SuggestedPrompts';
 import { logActivity } from './services/activityService';
-import {
-  consumeFreeTokens,
-  getFreeTokensRemaining,
-} from './services/quotaService';
+import { getFreeTokensRemaining } from './services/quotaService';
 
 type View = 'chat' | 'dashboard';
 type AgentStatus = 'idle' | 'connecting' | 'listening' | 'speaking' | 'error';
@@ -323,11 +320,11 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
 
         const stream = await runChatStream(updatedMessages, currentPlan);
         let fullModelResponse = '';
-        let responseTokenUsage = 0;
+        let serverTokensRemaining: number | null = null;
 
         for await (const chunk of stream) {
-          if (chunk.usageMetadata?.totalTokenCount) {
-            responseTokenUsage = chunk.usageMetadata.totalTokenCount;
+          if (typeof chunk.tokensRemaining === 'number') {
+            serverTokensRemaining = chunk.tokensRemaining;
           }
           const chunkText = chunk.text;
 
@@ -338,21 +335,17 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
         }
 
         if (fullModelResponse) {
-          if (currentPlan === Plan.FREE && responseTokenUsage > 0) {
-            const remaining = await consumeFreeTokens(
-              user.email,
-              responseTokenUsage,
-            );
-            setFreeTokensRemaining(remaining);
+          if (
+            currentPlan === Plan.FREE &&
+            serverTokensRemaining !== null
+          ) {
+            setFreeTokensRemaining(serverTokensRemaining);
 
-            if (remaining <= 0) {
+            if (serverTokensRemaining <= 0) {
               void logActivity({
                 userEmail: user.email,
                 type: 'free_quota_exhausted',
-                metadata: {
-                  tokensRemaining: 0,
-                  lastUsage: responseTokenUsage,
-                },
+                metadata: { tokensRemaining: 0 },
               });
             }
           }
