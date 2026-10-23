@@ -30,10 +30,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const safeMessages = useMemo(
     () =>
       (Array.isArray(messages) ? messages : []).filter(
-        (m): m is ChatMessageType =>
-          !!m &&
-          typeof (m as any).role === 'string' &&
-          typeof (m as any).content === 'string'
+        (message): message is ChatMessageType =>
+          Boolean(message) &&
+          (message.role === 'user' || message.role === 'model') &&
+          typeof message.content === 'string',
       ),
     [messages]
   );
