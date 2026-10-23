@@ -1,33 +1,39 @@
-// Rol de mensaje en el chat
+export type ISODateString = string;
+export type ID = string;
+export type View = 'chat' | 'dashboard' | 'tutor' | 'admin';
+
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 export type ChatRole = 'user' | 'model';
 
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  tokenUsage?: TokenUsage | null;
 }
 
-// Planes disponibles en la app
 export enum Plan {
   FREE = 'free',
   PRO = 'pro',
   PREMIUM = 'premium',
 }
 
-// Datos básicos del usuario autenticado
 export interface User {
   email: string;
   firstName: string;
   lastName: string;
+  isAdmin?: boolean;
 }
 
-// Conversaciones guardadas (id de Supabase, fecha ISO)
 export interface Conversation {
-  id: string;
-  created_at: string; // ISO string desde la BD
-  title?: string | null; // 🆕 título de la conversación
+  id: ID;
+  created_at: ISODateString;
+  title?: string | null;
 }
-
-// ---- Checklist ----
 
 export type ChecklistStatus = 'Pendiente' | 'En Progreso' | 'Completado';
 
@@ -42,22 +48,22 @@ export interface ChecklistData {
   items: ChecklistItem[];
 }
 
-// ---- Timeline / Línea de tiempo ----
-
 export type TimelineStatus = 'Completado' | 'Actual' | 'Próximo';
 
 export interface TimelineEvent {
-  date: string; // ISO string
+  date?: ISODateString;
+  label?: string;
+  title?: string;
   description: string;
-  status: TimelineStatus;
+  status?: TimelineStatus;
 }
 
 export interface TimelineData {
   title: string;
-  events: TimelineEvent[];
+  events?: TimelineEvent[];
+  items?: TimelineEvent[];
+  steps?: TimelineEvent[];
 }
-
-// ---- Dashboard de cuenta / suscripción ----
 
 export type SubscriptionStatus =
   | 'none'
@@ -70,10 +76,10 @@ export type SubscriptionStatus =
 export type PaymentStatus = 'paid' | 'pending' | 'failed' | 'refunded';
 
 export interface AccountSubscription {
-  planId: Plan;            // id interno del plan
-  planName: string;        // nombre legible del plan
+  planId: Plan;
+  planName: string;
   status: SubscriptionStatus;
-  currentPeriodEnd: string; // ISO string (próxima renovación o fin de acceso)
+  currentPeriodEnd: ISODateString | null;
 }
 
 export interface AccountQuotas {
@@ -84,17 +90,32 @@ export interface AccountQuotas {
 }
 
 export interface AccountPayment {
-  id: string;
-  date: string;      // ISO string
-  amount: number;    // número para cálculos
+  id: ID;
+  date: ISODateString;
+  amount: number;
   status: PaymentStatus;
 }
 
+export type ActivityType =
+  | 'login'
+  | 'signup'
+  | 'logout'
+  | 'message_user'
+  | 'message_assistant'
+  | 'upgrade_click'
+  | 'upgrade_success'
+  | 'choose_free_plan'
+  | 'plan_manage_open'
+  | 'chat_message_sent'
+  | 'chat_message_answered'
+  | 'free_quota_exhausted'
+  | (string & {});
+
 export interface ActivityEvent {
-  id: string;
-  type: string;
-  createdAt: string; // fecha/hora del evento
-  metadata?: Record<string, any>;
+  id: ID;
+  type: ActivityType;
+  createdAt: ISODateString;
+  metadata?: Record<string, unknown>;
 }
 
 export interface AccountDashboardData {
@@ -103,3 +124,5 @@ export interface AccountDashboardData {
   payments: AccountPayment[];
   activity: ActivityEvent[];
 }
+
+export type TutorLanguage = 'es' | 'en' | (string & {});
