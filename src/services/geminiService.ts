@@ -3,23 +3,32 @@
 import {
   GoogleGenAI,
   Modality,
-  LiveServerMessage,
+  type LiveServerMessage,
 } from '@google/genai';
-
-import { ChatMessage, Plan } from '../types';
+import { supabase } from './supabaseClient';
+import { type ChatMessage, Plan } from '../types';
 import { createBlob, decode, decodeAudioData } from '../../utils/audio';
 
 interface ChatApiResponse {
   text?: string;
   model?: string;
-  usageMetadata?: unknown;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  } | null;
+  quota?: {
+    enforced?: boolean;
+    remaining?: number | null;
+  };
   error?: string;
   code?: string;
 }
 
 interface ChatChunk {
   text: string;
-  usageMetadata?: unknown;
+  usageMetadata?: ChatApiResponse['usageMetadata'];
+  quotaRemaining?: number | null;
 }
 
 interface VoiceTokenResponse {
@@ -29,26 +38,38 @@ interface VoiceTokenResponse {
   error?: string;
 }
 
+async function authHeaders(): Promise<Record<string, string>> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error('Tu sesión expiró. Inicia sesión nuevamente.');
+  }
+
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${session.access_token}`,
+  };
+}
+
 const getVoiceSystemInstruction = (plan: Plan) => `
-Eres ChatMig, un asistente migratorio conversacional.
+Eres ChatMi, un asistente migratorio conversacional.
 Habla principalmente en el idioma del usuario, por defecto español neutro.
-Sé profesional, cercano, claro y conciso.
+Sé profesional, claro y conciso.
 No garantices aprobaciones ni sustituyas asesoría legal profesional.
-Adapta la profundidad al plan "${plan}".
+El plan actual es "${plan}".
 `;
 
 export async function* runChatStream(
   chatHistory: ChatMessage[],
-  plan: Plan,
+  _plan: Plan,
 ): AsyncGenerator<ChatChunk> {
   const response = await fetch('/api/gemini', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: await authHeaders(),
     body: JSON.stringify({
       messages: chatHistory,
-      plan,
     }),
   });
 
@@ -56,8 +77,7 @@ export async function* runChatStream(
 
   if (!response.ok) {
     throw new Error(
-      data.error ||
-        `Gemini backend respondió HTTP ${response.status}`,
+      data.error || `Gemini backend respondió HTTP ${response.status}`,
     );
   }
 
@@ -70,6 +90,7 @@ export async function* runChatStream(
   yield {
     text,
     usageMetadata: data.usageMetadata,
+    quotaRemaining: data.quota?.remaining ?? null,
   };
 }
 
@@ -89,9 +110,7 @@ async function getLiveClient(): Promise<{
 }> {
   const response = await fetch('/api/gemini-ephemeral-token', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: await authHeaders(),
   });
 
   const data = (await response.json().catch(() => ({}))) as VoiceTokenResponse;
@@ -106,7 +125,7 @@ async function getLiveClient(): Promise<{
   const client = new GoogleGenAI({
     apiKey: data.token,
     httpOptions: {
-      apiVersion: 'v1alpha',
+      apiVersion: data.apiVersion || 'v1alpha',
     },
   });
 
@@ -175,8 +194,7 @@ export const connectToVoiceAgent = async (
       },
 
       onmessage: async (message: LiveServerMessage) => {
-        const modelTurn = message.serverContent?.modelTurn;
-        const parts = modelTurn?.parts;
+        const parts = message.serverContent?.modelTurn?.parts;
         const base64Audio = parts?.[0]?.inlineData?.data;
 
         if (base64Audio) {

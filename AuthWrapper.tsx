@@ -1,121 +1,143 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 import App from './src/App';
 import AuthPanel from './src/components/AuthPanel';
-import { User, Plan } from './src/types';
+import { supabase } from './src/services/supabaseClient';
+import { Plan, type User } from './src/types';
 
-interface Session {
+interface AppSession {
   user: User;
   plan: Plan;
 }
 
-type InitialView = 'chat' | 'dashboard';
+function toAppUser(user: SupabaseUser): User {
+  const metadata = user.user_metadata as
+    | { first_name?: string; last_name?: string }
+    | undefined;
 
-const SESSION_STORAGE_KEY = 'chatmig_session';
+  return {
+    id: user.id,
+    email: user.email || '',
+    firstName: metadata?.first_name || 'Usuario',
+    lastName: metadata?.last_name || '',
+  };
+}
+
+async function resolvePlan(
+  userId: string,
+  userEmail: string,
+): Promise<Plan> {
+  try {
+    const byId = await supabase
+      .from('subscriptions')
+      .select('plan,status')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (!byId.error && byId.data) {
+      if (byId.data.plan === 'premium') return Plan.PREMIUM;
+      if (byId.data.plan === 'pro') return Plan.PRO;
+      return Plan.FREE;
+    }
+
+    const byEmail = await supabase
+      .from('subscriptions')
+      .select('plan,status')
+      .eq('user_email', userEmail)
+      .eq('status', 'active')
+      .limit(1);
+
+    const legacy = Array.isArray(byEmail.data) ? byEmail.data[0] : null;
+
+    if (legacy?.plan === 'premium') return Plan.PREMIUM;
+    if (legacy?.plan === 'pro') return Plan.PRO;
+    return Plan.FREE;
+  } catch {
+    return Plan.FREE;
+  }
+}
 
 const AuthWrapper: React.FC = () => {
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<AppSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [initialView, setInitialView] = useState<InitialView>('chat');
 
-  // 🔁 Restaurar sesión al cargar la app
+  const hydrate = useCallback(async (authUser: SupabaseUser | null) => {
+    if (!authUser?.email) {
+      setSession(null);
+      return;
+    }
+
+    const plan = await resolvePlan(authUser.id, authUser.email);
+    setSession({
+      user: toAppUser(authUser),
+      plan,
+    });
+  }, []);
+
   useEffect(() => {
-    try {
-      const storedSession = localStorage.getItem(SESSION_STORAGE_KEY);
+    let mounted = true;
 
-      if (!storedSession) {
-        setIsLoading(false);
-        return;
+    void (async () => {
+      try {
+        const {
+          data: { session: authSession },
+        } = await supabase.auth.getSession();
+
+        if (mounted) {
+          await hydrate(authSession?.user ?? null);
+        }
+      } finally {
+        if (mounted) setIsLoading(false);
       }
+    })();
 
-      const parsed = JSON.parse(storedSession) as Session;
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, authSession) => {
+      void hydrate(authSession?.user ?? null);
+    });
 
-      if (parsed?.user?.email) {
-        console.log('[AuthWrapper] Sesión restaurada desde localStorage:', parsed);
-        setSession(parsed);
-        setInitialView('chat'); // quien vuelve entra directo al chat
-      } else {
-        console.warn('[AuthWrapper] Sesión inválida, limpiando storage');
-        localStorage.removeItem(SESSION_STORAGE_KEY);
-      }
-    } catch (error) {
-      console.error('[AuthWrapper] Error parseando sesión desde localStorage:', error);
-      localStorage.removeItem(SESSION_STORAGE_KEY);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [hydrate]);
 
-  // ✅ Guardar sesión cuando el usuario inicia sesión / se registra
   const handleLoginSuccess = useCallback((user: User, plan: Plan) => {
-    const newSession: Session = { user, plan };
-
-    try {
-      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(newSession));
-      console.log('[AuthWrapper] Sesión guardada en localStorage:', newSession);
-      setSession(newSession);
-      setInitialView('dashboard'); // primer login → mándalo al dashboard/mi cuenta
-    } catch (error) {
-      console.error('[AuthWrapper] Error guardando sesión en localStorage:', error);
-    }
+    setSession({ user, plan });
   }, []);
 
-  // 🚪 Logout limpio
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
     try {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
-      console.log('[AuthWrapper] Sesión eliminada de localStorage');
-    } catch (error) {
-      console.error('[AuthWrapper] Error eliminando sesión de localStorage:', error);
+      await supabase.auth.signOut();
     } finally {
       setSession(null);
-      setInitialView('chat');
     }
   }, []);
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <svg
-            className="mx-auto h-12 w-12 animate-spin text-blue-600"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            />
-          </svg>
-          <p className="mt-4 text-lg font-medium text-gray-700 dark:text-gray-300">
-            Cargando sesión...
-          </p>
-        </div>
+      <div className="flex h-screen items-center justify-center bg-white text-neutral-700">
+        <p className="text-sm">Cargando ChatMi…</p>
       </div>
     );
   }
 
-  if (session) {
-    return (
-      <App
-        user={session.user}
-        plan={session.plan}
-        onLogout={handleLogout}
-        initialView={initialView}
-      />
-    );
+  if (!session) {
+    return <AuthPanel onLoginSuccess={handleLoginSuccess} />;
   }
 
-  return <AuthPanel onLoginSuccess={handleLoginSuccess} />;
+  return (
+    <App
+      user={session.user}
+      plan={session.plan}
+      onLogout={() => {
+        void handleLogout();
+      }}
+      initialView="chat"
+    />
+  );
 };
 
 export default AuthWrapper;
