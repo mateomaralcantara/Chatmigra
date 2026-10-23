@@ -202,10 +202,16 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
           return;
         }
 
-        const loadedMessages: ChatMessage[] = (data || []).map((m: any) => ({
-          role: m.role as 'user' | 'model',
-          content: m.content,
-        }));
+        const loadedMessages: ChatMessage[] = (data || [])
+          .filter(
+            (row): row is { role: 'user' | 'model'; content: string } =>
+              (row.role === 'user' || row.role === 'model') &&
+              typeof row.content === 'string',
+          )
+          .map((row) => ({
+            role: row.role,
+            content: row.content,
+          }));
 
         setMessages(loadedMessages.length ? loadedMessages : [INITIAL_MESSAGE]);
       } catch (e) {
@@ -323,13 +329,7 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
           if (chunk.usageMetadata?.totalTokenCount) {
             responseTokenUsage = chunk.usageMetadata.totalTokenCount;
           }
-          let chunkText = '';
-
-          if (typeof chunk.text === 'function') {
-            chunkText = chunk.text();
-          } else if (typeof chunk.text === 'string') {
-            chunkText = chunk.text;
-          }
+          const chunkText = chunk.text;
 
           if (!chunkText) continue;
 
@@ -538,6 +538,59 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
     setCurrentView('dashboard');
     setFocusPremium(true);
   }, []);
+
+  useEffect(() => {
+    const onNewChat = () => {
+      setCurrentView('chat');
+      handleNewConversation();
+    };
+
+    const onNavigate = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail;
+
+      if (detail === 'chat' || detail === 'dashboard') {
+        setError(null);
+        setCurrentView(detail);
+        return;
+      }
+
+      if (detail === 'tutor') {
+        setCurrentView('chat');
+        setError(
+          'Tutor IA todavía no está habilitado en esta versión de ChatMi.',
+        );
+      }
+    };
+
+    const onVoice = () => {
+      void toggleVoiceAgent();
+    };
+
+    const onUpgrade = () => {
+      goToPremiumPlan();
+    };
+
+    const onImages = () => {
+      setCurrentView('chat');
+      setError(
+        'Las imágenes de apoyo se muestran automáticamente cuando una respuesta las necesita.',
+      );
+    };
+
+    window.addEventListener('chatmi:new-chat', onNewChat);
+    window.addEventListener('chatmi:navigate', onNavigate);
+    window.addEventListener('chatmi:voice', onVoice);
+    window.addEventListener('chatmi:upgrade', onUpgrade);
+    window.addEventListener('chatmi:images', onImages);
+
+    return () => {
+      window.removeEventListener('chatmi:new-chat', onNewChat);
+      window.removeEventListener('chatmi:navigate', onNavigate);
+      window.removeEventListener('chatmi:voice', onVoice);
+      window.removeEventListener('chatmi:upgrade', onUpgrade);
+      window.removeEventListener('chatmi:images', onImages);
+    };
+  }, [goToPremiumPlan, handleNewConversation, toggleVoiceAgent]);
 
   // ---------- DERIVADOS ----------
 
