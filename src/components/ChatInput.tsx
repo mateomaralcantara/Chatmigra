@@ -15,69 +15,74 @@ const ChatInput: React.FC<ChatInputProps> = ({
 }) => {
   const [value, setValue] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const submit = () => {
     const text = value.trim();
     if (!text || isLoading) return;
     onSendMessage(text);
     setValue('');
   };
 
-  return (
-    <form
-      onSubmit={handleSubmit}
-      className="
-        px-3 sm:px-4 py-3
-        flex items-end gap-3
-        bg-black
-        border-t border-gray-800
-      "
-    >
-      <textarea
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        rows={1}
-        placeholder="Escribe tu mensaje para ChatMig..."
-        className="
-          flex-1 min-h-[52px] max-h-40
-          rounded-xl border border-gray-700
-          bg-neutral-900 text-gray-100
-          placeholder:text-gray-500
-          px-3 py-2 text-sm
-          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-          resize-none
-        "
-      />
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    submit();
+  };
 
+  return (
+    <form onSubmit={handleSubmit} className="cm-composer">
       <button
         type="button"
-        onClick={onToggleVoice}
-        className="
-          hidden sm:inline-flex items-center justify-center
-          h-10 w-10 rounded-full border border-gray-600
-          text-gray-300 text-sm
-          hover:border-blue-500 hover:text-blue-400
-          disabled:opacity-50
-        "
-        disabled={isLoading}
+        className="cm-composer-plus"
+        aria-label="Adjuntar archivo"
+        title="Adjuntar archivo"
       >
-        {isVoiceActive ? '🎙️' : '🎧'}
+        +
       </button>
 
-      <button
-        type="submit"
-        disabled={isLoading || !value.trim()}
-        className="
-          inline-flex items-center justify-center
-          h-10 px-4 rounded-xl
-          bg-blue-600 text-white text-sm font-semibold
-          hover:bg-blue-500
-          disabled:bg-gray-600 disabled:cursor-not-allowed
-          transition
-        "
-      >
-        {isLoading ? 'Enviando...' : 'Enviar'}
-      </button>
+      <textarea
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            submit();
+          }
+        }}
+        rows={1}
+        placeholder="Pregunta a ChatMi"
+        aria-label="Mensaje para ChatMi"
+      />
+
+      <div className="cm-composer-actions">
+        <button
+          type="button"
+          className="cm-model-chip"
+          title="Modelo activo"
+          aria-label="Modelo Gemini 3.8"
+        >
+          Gemini 3.8
+        </button>
+
+        <button
+          type="button"
+          onClick={onToggleVoice}
+          className="cm-composer-mic"
+          disabled={isLoading}
+          aria-label={isVoiceActive ? 'Finalizar voz' : 'Hablar con ChatMi'}
+          title={isVoiceActive ? 'Finalizar voz' : 'Hablar con ChatMi'}
+        >
+          {isVoiceActive ? '●' : '♩'}
+        </button>
+
+        <button
+          type="submit"
+          disabled={isLoading || !value.trim()}
+          className="cm-composer-send"
+          aria-label="Enviar mensaje"
+          title="Enviar"
+        >
+          {isLoading ? '…' : '↑'}
+        </button>
+      </div>
     </form>
   );
 };

@@ -9,7 +9,6 @@ import React, {
 import { ChatMessage, Plan, Conversation, User } from './types';
 import { runChatStream, connectToVoiceAgent } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
-import Header from './components/Header';
 import ChatWindow from './components/ChatWindow';
 import ChatInput from './components/ChatInput';
 import ConversationHistory from './components/ConversationHistory';
@@ -81,6 +80,7 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focusPremium, setFocusPremium] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   // Voice agent
   const [isVoiceAgentActive, setIsVoiceAgentActive] = useState(false);
@@ -150,6 +150,7 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
     setCurrentConversationId(null);
     setMessages([NEW_CONVERSATION_MESSAGE]);
     setError(null);
+    setIsHistoryOpen(false);
   }, []);
 
   const handleSelectConversation = useCallback(
@@ -159,6 +160,7 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
       setIsLoading(true);
       setError(null);
       setCurrentConversationId(id);
+      setIsHistoryOpen(false);
 
       try {
         const { data, error } = await supabase
@@ -481,17 +483,22 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
     const onUpgrade = () => {
       goToPremiumPlan();
     };
+    const onHistory = () => {
+      setIsHistoryOpen((open) => !open);
+    };
 
     window.addEventListener('chatmi:new-chat', onNewChat);
     window.addEventListener('chatmi:navigate', onNavigate);
     window.addEventListener('chatmi:voice', onVoice);
     window.addEventListener('chatmi:upgrade', onUpgrade);
+    window.addEventListener('chatmi:history', onHistory);
 
     return () => {
       window.removeEventListener('chatmi:new-chat', onNewChat);
       window.removeEventListener('chatmi:navigate', onNavigate);
       window.removeEventListener('chatmi:voice', onVoice);
       window.removeEventListener('chatmi:upgrade', onUpgrade);
+      window.removeEventListener('chatmi:history', onHistory);
     };
   }, [
     handleNewConversation,
@@ -509,27 +516,49 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
   // ---------- RENDER ----------
 
   return (
-    <div className="app-shell">
-      <div className="flex h-screen text-slate-100 overflow-y-auto">
-        {currentView === 'chat' && (
-          <ConversationHistory
-            conversations={conversations}
-            currentConversationId={currentConversationId}
-            onSelectConversation={handleSelectConversation}
-            onNewConversation={handleNewConversation}
-            isLoading={isLoading}
-          />
-        )}
+    <div className="cm-app">
+      {currentView === 'chat' && (
+        <div className="cm-chat-view">
+          {isHistoryOpen && (
+            <div
+              className="cm-history-backdrop"
+              role="presentation"
+              onClick={() => setIsHistoryOpen(false)}
+            >
+              <div
+                className="cm-history-drawer"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <ConversationHistory
+                  conversations={conversations}
+                  currentConversationId={currentConversationId}
+                  onSelectConversation={handleSelectConversation}
+                  onNewConversation={handleNewConversation}
+                  isLoading={isLoading}
+                />
+              </div>
+            </div>
+          )}
 
-        <div className="flex flex-col grow relative">
-          <Header
-            user={user}
-            onLogout={onLogout}
-            currentView={currentView}
-            onNavigate={(view: View) => setCurrentView(view)}
-          />
+          {showSuggestions ? (
+            <section className="cm-home-state" aria-label="Inicio de ChatMi">
+              <h1 className="cm-home-title">¿En qué puedo ayudarte hoy?</h1>
+              <p className="cm-home-subtitle">
+                Pregunta sobre visas, residencia, documentos, entrevistas o próximos pasos.
+              </p>
 
-          {currentView === 'chat' && (
+              <div className="cm-home-composer">
+                <ChatInput
+                  onSendMessage={handleSendMessage}
+                  isLoading={isLoading}
+                  onToggleVoice={toggleVoiceAgent}
+                  isVoiceActive={isVoiceAgentActive}
+                />
+
+                <SuggestedPrompts onSendMessage={handleSendMessage} />
+              </div>
+            </section>
+          ) : (
             <>
               <ChatWindow
                 messages={messages}
@@ -540,15 +569,12 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
               />
 
               {error && (
-                <div className="px-4 py-2 text-center text-red-400 bg-red-900/30">
+                <div className="cm-inline-error">
                   {error}
                 </div>
               )}
 
-              <div className="bg-slate-950/70 border-t border-slate-800">
-                {showSuggestions && (
-                  <SuggestedPrompts onSendMessage={handleSendMessage} />
-                )}
+              <div className="cm-chat-composer-dock">
                 <ChatInput
                   onSendMessage={handleSendMessage}
                   isLoading={isLoading}
@@ -559,19 +585,6 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
             </>
           )}
 
-          {currentView === 'dashboard' && (
-            <div className="p-4 sm:p-6">
-              <div className="glass-panel p-4 sm:p-6">
-                <AccountDashboard
-                  user={user}
-                  plan={currentPlan}
-                  onPlanChange={setCurrentPlan}
-                  focusPremium={focusPremium}
-                />
-              </div>
-            </div>
-          )}
-
           {isVoiceAgentActive && currentPlan !== Plan.FREE && (
             <VoiceAgentOverlay
               status={agentStatus}
@@ -580,7 +593,20 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
             />
           )}
         </div>
-      </div>
+      )}
+
+      {currentView === 'dashboard' && (
+        <div className="cm-dashboard-view">
+          <div className="cm-dashboard-card">
+            <AccountDashboard
+              user={user}
+              plan={currentPlan}
+              onPlanChange={setCurrentPlan}
+              focusPremium={focusPremium}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

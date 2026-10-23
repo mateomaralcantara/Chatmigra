@@ -5,33 +5,28 @@ interface SuggestedPromptsProps {
 }
 
 const prompts = [
-  "¿Qué necesito para una visa de turista a Estados Unidos?",
-  "¿Cómo puedo obtener un permiso de trabajo en Canadá?",
-  "Explícame el proceso de reunificación familiar en España.",
-  "¿Cuáles son los requisitos para estudiar en Australia?",
+  '¿Qué necesito para solicitar una visa de turista a Estados Unidos?',
+  'Explícame los pasos para una visa de estudiante.',
+  '¿Cómo preparo una entrevista consular?',
 ];
 
-const SuggestedPrompts: React.FC<SuggestedPromptsProps> = ({ onSendMessage }) => {
+const SuggestedPrompts: React.FC<SuggestedPromptsProps> = ({
+  onSendMessage,
+}) => {
   return (
-    <div className="p-4 pt-3 max-w-3xl mx-auto bg-black text-gray-100">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {prompts.map((prompt, index) => (
-          <button
-            key={index}
-            onClick={() => onSendMessage(prompt)}
-            className="
-              w-full text-left text-sm p-3
-              bg-neutral-900 hover:bg-neutral-800
-              text-gray-100
-              rounded-lg
-              transition-colors
-              focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-black
-            "
-          >
-            {prompt}
-          </button>
-        ))}
-      </div>
+    <div className="cm-suggestions" aria-label="Preguntas sugeridas">
+      {prompts.map((prompt) => (
+        <button
+          key={prompt}
+          type="button"
+          className="cm-suggestion"
+          onClick={() => onSendMessage(prompt)}
+        >
+          <span className="cm-suggestion-icon" aria-hidden="true">✦</span>
+          <span className="cm-suggestion-copy">{prompt}</span>
+          <span className="cm-suggestion-arrow" aria-hidden="true">↗</span>
+        </button>
+      ))}
     </div>
   );
 };
