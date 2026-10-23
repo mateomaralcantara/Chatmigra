@@ -1,26 +1,11 @@
-// src/services/activityService.ts
 import { supabase } from './supabaseClient';
-
-export type ActivityType =
-  | 'login'
-  | 'signup'
-  | 'logout'
-  | 'message_user'
-  | 'message_assistant'
-  | 'upgrade_click'
-  | 'upgrade_success'
-  | 'choose_free_plan'
-  | 'plan_manage_open'
-  | 'upgrade_click'
-  | 'plan_manage_open'
-  | 'chat_message_sent'
-  | 'chat_message_answered';
+import type { ActivityType } from '../types';
 
 export async function logActivity(params: {
   userEmail: string;
   type: ActivityType;
   metadata?: Record<string, unknown>;
-}) {
+}): Promise<void> {
   const { userEmail, type, metadata = {} } = params;
 
   try {
@@ -31,9 +16,10 @@ export async function logActivity(params: {
     });
 
     if (error) {
-      console.error('Error guardando actividad:', error);
+      console.error('Error guardando actividad:', error.message);
     }
-  } catch (err) {
-    console.error('Error inesperado guardando actividad:', err);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error desconocido';
+    console.error('Error inesperado guardando actividad:', message);
   }
 }
