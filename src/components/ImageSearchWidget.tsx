@@ -1,5 +1,6 @@
 // src/components/ImageSearchWidget.tsx
 import React, { useEffect, useState } from 'react';
+import { authenticatedFetch } from '../services/apiClient';
 
 interface ImageSearchWidgetProps {
   query: string;
@@ -23,7 +24,7 @@ const ImageSearchWidget: React.FC<ImageSearchWidgetProps> = ({ query, count = 3 
         setError('');
 
         // 🔥 Aquí llamas a TU backend, NO directamente a Google (CORS + API key)
-        const res = await fetch(`/api/image-search?q=${encodeURIComponent(query)}&n=${count}`);
+        const res = await authenticatedFetch(`/api/image-search?q=${encodeURIComponent(query)}&n=${count}`);
         if (!res.ok) throw new Error('Error buscando imágenes');
         const data = await res.json();
         setImages(data.results || []);
