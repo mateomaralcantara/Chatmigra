@@ -86,16 +86,3 @@ export async function getFreeTokensRemaining(email: string): Promise<number> {
   return FREE_TOKENS_MAX;
 }
 
-export async function consumeFreeTokens(
-  email: string,
-  usedTokens: number,
-): Promise<number> {
-  const current = await getFreeTokensRemaining(email);
-  const charge = Math.max(0, Math.ceil(usedTokens));
-  const next = clamp(current - charge);
-
-  writeLocal(email, next);
-  await persistQuota(email, next);
-
-  return next;
-}
