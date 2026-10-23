@@ -83,19 +83,33 @@ function estimateReservation(messages: ChatMessage[]): number {
 async function resolvePlan(
   supabase: SupabaseClient,
   userId: string,
+  userEmail: string,
 ): Promise<'free' | 'pro' | 'premium'> {
   try {
-    const { data, error } = await supabase
+    const byId = await supabase
       .from('subscriptions')
       .select('plan,status')
       .eq('user_id', userId)
       .eq('status', 'active')
       .maybeSingle();
 
-    if (error || !data) return 'free';
+    if (!byId.error && byId.data) {
+      return byId.data.plan === 'premium' || byId.data.plan === 'pro'
+        ? byId.data.plan
+        : 'free';
+    }
 
-    return data.plan === 'premium' || data.plan === 'pro'
-      ? data.plan
+    const byEmail = await supabase
+      .from('subscriptions')
+      .select('plan,status')
+      .eq('user_email', userEmail)
+      .eq('status', 'active')
+      .limit(1);
+
+    const legacy = Array.isArray(byEmail.data) ? byEmail.data[0] : null;
+
+    return legacy?.plan === 'premium' || legacy?.plan === 'pro'
+      ? legacy.plan
       : 'free';
   } catch {
     return 'free';
@@ -117,7 +131,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     });
   }
 
-  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+  const apiKey = (
+    process.env.GEMINI_API_KEY ||
+    process.env.VITE_GEMINI_API_KEY ||
+    ''
+  ).trim();
   if (!apiKey) {
     return res.status(500).json({
       error: 'Gemini no está configurado en el servidor.',
@@ -136,7 +154,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return res.status(400).json({ error: 'At least one message is required' });
     }
 
-    const effectivePlan = await resolvePlan(auth.supabase, auth.user.id);
+    const effectivePlan = await resolvePlan(
+      auth.supabase,
+      auth.user.id,
+      auth.user.email || '',
+    );
 
     if (effectivePlan === 'free') {
       reservedTokens = estimateReservation(messages);

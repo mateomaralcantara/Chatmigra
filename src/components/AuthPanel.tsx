@@ -23,18 +23,35 @@ function appUserFromAuth(authUser: {
   };
 }
 
-async function resolvePlan(userId: string): Promise<Plan> {
+async function resolvePlan(
+  userId: string,
+  userEmail: string,
+): Promise<Plan> {
   try {
-    const { data, error } = await supabase
+    const byId = await supabase
       .from('subscriptions')
       .select('plan,status')
       .eq('user_id', userId)
       .eq('status', 'active')
       .maybeSingle();
 
-    if (error || !data) return Plan.FREE;
-    if (data.plan === 'premium') return Plan.PREMIUM;
-    if (data.plan === 'pro') return Plan.PRO;
+    if (!byId.error && byId.data) {
+      if (byId.data.plan === 'premium') return Plan.PREMIUM;
+      if (byId.data.plan === 'pro') return Plan.PRO;
+      return Plan.FREE;
+    }
+
+    const byEmail = await supabase
+      .from('subscriptions')
+      .select('plan,status')
+      .eq('user_email', userEmail)
+      .eq('status', 'active')
+      .limit(1);
+
+    const legacy = Array.isArray(byEmail.data) ? byEmail.data[0] : null;
+
+    if (legacy?.plan === 'premium') return Plan.PREMIUM;
+    if (legacy?.plan === 'pro') return Plan.PRO;
     return Plan.FREE;
   } catch {
     return Plan.FREE;
@@ -153,7 +170,10 @@ const AuthPanel: React.FC<AuthPanelProps> = ({ onLoginSuccess }) => {
           return;
         }
 
-        const plan = await resolvePlan(data.user.id);
+        const plan = await resolvePlan(
+          data.user.id,
+          data.user.email || cleanEmail,
+        );
         onLoginSuccess(appUserFromAuth(data.user), plan);
       } catch (caught) {
         console.error('[AuthPanel]', caught);

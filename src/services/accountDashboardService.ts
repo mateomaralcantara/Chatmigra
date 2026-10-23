@@ -32,20 +32,33 @@ export async function getAccountDashboardData(
     fallbackPlan === Plan.FREE ? 'none' : 'active';
 
   try {
-    const { data } = await supabase
+    const byId = await supabase
       .from('subscriptions')
       .select('plan,status')
       .eq('user_id', user.id)
       .eq('status', 'active')
       .maybeSingle();
 
-    if (data?.plan === 'premium') effectivePlan = Plan.PREMIUM;
-    else if (data?.plan === 'pro') effectivePlan = Plan.PRO;
-    else if (data?.plan === 'free') effectivePlan = Plan.FREE;
+    let subscription = byId.data;
 
-    if (data?.status) {
+    if (byId.error || !subscription) {
+      const byEmail = await supabase
+        .from('subscriptions')
+        .select('plan,status')
+        .eq('user_email', user.email || '')
+        .eq('status', 'active')
+        .limit(1);
+
+      subscription = Array.isArray(byEmail.data) ? byEmail.data[0] : null;
+    }
+
+    if (subscription?.plan === 'premium') effectivePlan = Plan.PREMIUM;
+    else if (subscription?.plan === 'pro') effectivePlan = Plan.PRO;
+    else if (subscription?.plan === 'free') effectivePlan = Plan.FREE;
+
+    if (subscription?.status) {
       subscriptionStatus =
-        data.status as AccountDashboardData['subscription']['status'];
+        subscription.status as AccountDashboardData['subscription']['status'];
     }
   } catch {
     // The dashboard remains usable even if persistence is temporarily degraded.
@@ -78,14 +91,27 @@ export async function getAccountDashboardData(
 
   let payments: AccountDashboardData['payments'] = [];
   try {
-    const { data } = await supabase
+    const byId = await supabase
       .from('payments')
       .select('id,created_at,amount,status')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(20);
 
-    payments = (data || []).map((payment) => ({
+    let paymentRows = byId.data;
+
+    if (byId.error) {
+      const byEmail = await supabase
+        .from('payments')
+        .select('id,created_at,amount,status')
+        .eq('user_email', user.email || '')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      paymentRows = byEmail.data;
+    }
+
+    payments = (paymentRows || []).map((payment) => ({
       id: String(payment.id),
       date: String(payment.created_at || ''),
       amount: Number(payment.amount || 0),
@@ -97,14 +123,27 @@ export async function getAccountDashboardData(
 
   let activity: AccountDashboardData['activity'] = [];
   try {
-    const { data } = await supabase
+    const byId = await supabase
       .from('user_activity')
       .select('id,type,created_at,metadata')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(30);
 
-    activity = (data || []).map((event) => ({
+    let activityRows = byId.data;
+
+    if (byId.error) {
+      const byEmail = await supabase
+        .from('user_activity')
+        .select('id,type,created_at,metadata')
+        .eq('user_email', user.email || '')
+        .order('created_at', { ascending: false })
+        .limit(30);
+
+      activityRows = byEmail.data;
+    }
+
+    activity = (activityRows || []).map((event) => ({
       id: String(event.id),
       type: String(event.type),
       createdAt: String(event.created_at),

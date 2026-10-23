@@ -26,7 +26,11 @@ export default async function handler(
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+  const apiKey = (
+    process.env.GEMINI_API_KEY ||
+    process.env.VITE_GEMINI_API_KEY ||
+    ''
+  ).trim();
 
   if (!apiKey) {
     return res.status(500).json({
@@ -36,12 +40,25 @@ export default async function handler(
   }
 
   try {
-    const { data: subscription } = await auth.supabase
+    const byId = await auth.supabase
       .from('subscriptions')
       .select('plan,status')
       .eq('user_id', auth.user.id)
       .eq('status', 'active')
       .maybeSingle();
+
+    let subscription = byId.data;
+
+    if (byId.error || !subscription) {
+      const byEmail = await auth.supabase
+        .from('subscriptions')
+        .select('plan,status')
+        .eq('user_email', auth.user.email || '')
+        .eq('status', 'active')
+        .limit(1);
+
+      subscription = Array.isArray(byEmail.data) ? byEmail.data[0] : null;
+    }
 
     if (subscription?.plan !== 'premium' && subscription?.plan !== 'pro') {
       return res.status(403).json({

@@ -92,7 +92,7 @@ const App: React.FC<AppProps> = ({
         ? previous.slice(0, -1)
         : previous;
     });
-  }, []);
+  }, [user.email]);
 
   const appendModelChunk = useCallback((text: string) => {
     setMessages((previous) => {
@@ -114,6 +114,7 @@ const App: React.FC<AppProps> = ({
       const { data, error: conversationsError } = await supabase
         .from('conversations')
         .select('id,created_at,title')
+        .eq('user_email', user.email)
         .order('created_at', { ascending: false });
 
       if (conversationsError) {
@@ -204,7 +205,7 @@ const App: React.FC<AppProps> = ({
         let conversationId = currentConversationId;
 
         if (!conversationId) {
-          const { data, error: conversationError } = await supabase
+          let created = await supabase
             .from('conversations')
             .insert({
               user_id: authUser.id,
@@ -213,6 +214,20 @@ const App: React.FC<AppProps> = ({
             })
             .select('id,created_at,title')
             .single();
+
+          if (created.error || !created.data) {
+            created = await supabase
+              .from('conversations')
+              .insert({
+                user_email: authUser.email ?? user.email,
+                title,
+              })
+              .select('id,created_at,title')
+              .single();
+          }
+
+          const data = created.data;
+          const conversationError = created.error;
 
           if (conversationError || !data) {
             console.warn(
@@ -234,17 +249,25 @@ const App: React.FC<AppProps> = ({
           ]);
         }
 
-        const { error: messageError } = await supabase.from('messages').insert({
+        let userMessageWrite = await supabase.from('messages').insert({
           conversation_id: conversationId,
           user_id: authUser.id,
           role: 'user',
           content: text,
         });
 
-        if (messageError) {
+        if (userMessageWrite.error) {
+          userMessageWrite = await supabase.from('messages').insert({
+            conversation_id: conversationId,
+            role: 'user',
+            content: text,
+          });
+        }
+
+        if (userMessageWrite.error) {
           console.warn(
             '[persistence] Mensaje de usuario no guardado:',
-            messageError.message,
+            userMessageWrite.error.message,
           );
         }
 
@@ -299,17 +322,25 @@ const App: React.FC<AppProps> = ({
         const persistence = await persistencePromise;
 
         if (persistence.conversationId && persistence.authUserId) {
-          const { error: saveModelError } = await supabase.from('messages').insert({
+          let modelWrite = await supabase.from('messages').insert({
             conversation_id: persistence.conversationId,
             user_id: persistence.authUserId,
             role: 'model',
             content: fullResponse,
           });
 
-          if (saveModelError) {
+          if (modelWrite.error) {
+            modelWrite = await supabase.from('messages').insert({
+              conversation_id: persistence.conversationId,
+              role: 'model',
+              content: fullResponse,
+            });
+          }
+
+          if (modelWrite.error) {
             console.warn(
               '[persistence] Respuesta no guardada:',
-              saveModelError.message,
+              modelWrite.error.message,
             );
           }
         }
