@@ -1,3 +1,4 @@
+# ChatMi quality gate: tests + TypeScript + production build
 name: ChatMi CI
 
 on:
