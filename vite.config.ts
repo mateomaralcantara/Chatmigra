@@ -2,26 +2,33 @@ import path from 'path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 3000,
-    host: '0.0.0.0',
-    proxy: {
-      // Todo lo que empiece por /api se manda al backend (api-server.mjs)
-      '/api': {
-        target: 'http://localhost:4000',
-        changeOrigin: true,
+export default defineConfig(() => {
+  const apiProxyTarget = process.env.VITE_API_PROXY_TARGET?.trim();
+
+  return {
+    plugins: [react()],
+    server: {
+      port: 3000,
+      host: '0.0.0.0',
+      ...(apiProxyTarget
+        ? {
+            proxy: {
+              '/api': {
+                target: apiProxyTarget,
+                changeOrigin: true,
+              },
+            },
+          }
+        : {}),
+    },
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, '.'),
       },
     },
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, '.'),
+    build: {
+      target: 'esnext',
+      sourcemap: true,
     },
-  },
-  build: {
-    target: 'esnext',
-    sourcemap: true,
-  },
+  };
 });
