@@ -17,6 +17,10 @@ import VoiceAgentOverlay from './components/VoiceAgentOverlay';
 import AccountDashboard from './components/AccountDashboard';
 import SuggestedPrompts from './components/SuggestedPrompts';
 import { logActivity } from './services/activityService';
+import {
+  consumeFreeTokens,
+  getFreeTokensRemaining,
+} from './services/quotaService';
 
 type View = 'chat' | 'dashboard';
 type AgentStatus = 'idle' | 'connecting' | 'listening' | 'speaking' | 'error';
@@ -81,6 +85,30 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focusPremium, setFocusPremium] = useState(false);
+  const [freeTokensRemaining, setFreeTokensRemaining] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    if (currentPlan !== Plan.FREE) {
+      setFreeTokensRemaining(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    void getFreeTokensRemaining(user.email)
+      .then((remaining) => {
+        if (active) setFreeTokensRemaining(remaining);
+      })
+      .catch((quotaError: unknown) => {
+        console.error('[quota] Error cargando cuota FREE:', quotaError);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [currentPlan, user.email]);
 
   // Voice agent
   const [isVoiceAgentActive, setIsVoiceAgentActive] = useState(false);
@@ -198,6 +226,26 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
       const text = inputText.trim();
       if (!text || isLoading) return;
 
+      if (
+        currentPlan === Plan.FREE &&
+        freeTokensRemaining !== null &&
+        freeTokensRemaining <= 0
+      ) {
+        setError(
+          'Has consumido los 3,000 tokens incluidos en el plan FREE. Mejora tu plan para continuar.',
+        );
+        setFocusPremium(true);
+        setCurrentView('dashboard');
+
+        void logActivity({
+          userEmail: user.email,
+          type: 'free_quota_exhausted',
+          metadata: { tokensRemaining: 0 },
+        });
+
+        return;
+      }
+
       setError(null);
       setIsLoading(true);
 
@@ -269,8 +317,12 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
 
         const stream = await runChatStream(updatedMessages, currentPlan);
         let fullModelResponse = '';
+        let responseTokenUsage = 0;
 
-        for await (const chunk of stream as any) {
+        for await (const chunk of stream) {
+          if (chunk.usageMetadata?.totalTokenCount) {
+            responseTokenUsage = chunk.usageMetadata.totalTokenCount;
+          }
           let chunkText = '';
 
           if (typeof chunk.text === 'function') {
@@ -286,6 +338,25 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
         }
 
         if (fullModelResponse) {
+          if (currentPlan === Plan.FREE && responseTokenUsage > 0) {
+            const remaining = await consumeFreeTokens(
+              user.email,
+              responseTokenUsage,
+            );
+            setFreeTokensRemaining(remaining);
+
+            if (remaining <= 0) {
+              void logActivity({
+                userEmail: user.email,
+                type: 'free_quota_exhausted',
+                metadata: {
+                  tokensRemaining: 0,
+                  lastUsage: responseTokenUsage,
+                },
+              });
+            }
+          }
+
           // Bloque de imágenes
           const imageBlock = `
 
@@ -363,6 +434,7 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
       user.email,
       appendModelChunk,
       clearModelPlaceholderIfEmpty,
+      freeTokensRemaining,
     ]
   );
 
