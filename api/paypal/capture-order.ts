@@ -61,7 +61,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const now = new Date().toISOString();
 
-    const { error: subscriptionError } = await admin
+    let subscriptionWrite = await admin
       .from('subscriptions')
       .upsert(
         {
@@ -76,11 +76,28 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         { onConflict: 'user_id' },
       );
 
-    if (subscriptionError) {
-      throw new Error(`SUBSCRIPTION_WRITE_FAILED: ${subscriptionError.message}`);
+    if (subscriptionWrite.error) {
+      subscriptionWrite = await admin
+        .from('subscriptions')
+        .upsert(
+          {
+            user_email: auth.user.email ?? null,
+            provider: 'paypal_checkout',
+            provider_subscription_id: orderId,
+            plan: 'premium',
+            status: 'active',
+          },
+          { onConflict: 'user_email' },
+        );
     }
 
-    const { error: paymentError } = await admin.from('payments').insert({
+    if (subscriptionWrite.error) {
+      throw new Error(
+        `SUBSCRIPTION_WRITE_FAILED: ${subscriptionWrite.error.message}`,
+      );
+    }
+
+    let paymentWrite = await admin.from('payments').insert({
       user_id: auth.user.id,
       user_email: auth.user.email ?? null,
       provider: 'paypal_checkout',
@@ -92,8 +109,22 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       created_at: now,
     });
 
-    if (paymentError) {
-      console.error('[paypal/capture-order] payment record failed', paymentError);
+    if (paymentWrite.error) {
+      paymentWrite = await admin.from('payments').insert({
+        user_email: auth.user.email ?? null,
+        provider: 'paypal_checkout',
+        provider_subscription_id: orderId,
+        amount: verified.amount,
+        currency: verified.currency,
+        status: 'paid',
+      });
+    }
+
+    if (paymentWrite.error) {
+      console.error(
+        '[paypal/capture-order] payment record failed',
+        paymentWrite.error,
+      );
     }
 
     return res.status(200).json({
