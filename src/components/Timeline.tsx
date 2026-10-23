@@ -1,12 +1,11 @@
-// components/Timeline.tsx
 import React from 'react';
-import { TimelineData } from '../types';
+import { type TimelineData, type TimelineEvent, type TimelineStatus } from '../types';
 
 interface TimelineProps {
   data: TimelineData;
 }
 
-const StatusDot: React.FC<{ status?: string }> = ({ status }) => {
+const StatusDot: React.FC<{ status?: TimelineStatus }> = ({ status }) => {
   let bgColor = 'bg-gray-400';
   let ringColor = 'ring-gray-300 dark:ring-gray-500';
 
@@ -33,10 +32,8 @@ const StatusDot: React.FC<{ status?: string }> = ({ status }) => {
 };
 
 const Timeline: React.FC<TimelineProps> = ({ data }) => {
-  // Permitimos data.items, data.steps o data.events
-  const anyData = data as any;
-  const rawItems = anyData.items ?? anyData.steps ?? anyData.events ?? [];
-  const items: any[] = Array.isArray(rawItems) ? rawItems : [];
+  const rawItems = data.items ?? data.steps ?? data.events ?? [];
+  const items: TimelineEvent[] = Array.isArray(rawItems) ? rawItems : [];
 
   if (!items.length) {
     return (
@@ -48,7 +45,7 @@ const Timeline: React.FC<TimelineProps> = ({ data }) => {
 
   return (
     <div className="my-3 not-prose text-gray-800 dark:text-gray-200">
-      {data?.title && (
+      {data.title && (
         <h3 className="text-md font-semibold mb-4 text-gray-900 dark:text-white">
           {data.title}
         </h3>
@@ -56,12 +53,12 @@ const Timeline: React.FC<TimelineProps> = ({ data }) => {
 
       <div className="relative border-l-2 border-gray-200 dark:border-gray-600 ml-2">
         {items.map((item, index) => (
-          <div key={index} className="mb-8 ml-8 relative">
+          <div key={`${item.date ?? item.label ?? item.title ?? 'item'}-${index}`} className="mb-8 ml-8 relative">
             {item.status && <StatusDot status={item.status} />}
             <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
-              {item.date && (
+              {(item.date || item.label) && (
                 <time className="block mb-1 text-xs font-normal leading-none text-gray-500 dark:text-gray-400">
-                  {item.date}
+                  {item.date ?? item.label}
                 </time>
               )}
               {item.title && (
