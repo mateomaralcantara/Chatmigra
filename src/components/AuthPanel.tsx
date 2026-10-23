@@ -431,7 +431,7 @@ const AuthPanel: React.FC<AuthPanelProps> = ({ onLoginSuccess }) => {
         return;
       }
 
-      // 2) Payload para upsert: primera vez → marcar has_used_free y dar 1500 tokens
+      // 2) Payload para upsert: primera vez → marcar has_used_free y dar 3000 tokens
       const payload: any = {
         user_email: currentUser.email,
         provider: 'internal',
@@ -442,7 +442,7 @@ const AuthPanel: React.FC<AuthPanelProps> = ({ onLoginSuccess }) => {
 
       if (!existing?.has_used_free) {
         payload.has_used_free = true;
-        payload.free_messages_left = 1500;
+        payload.free_messages_left = 3000;
       }
 
       const {
@@ -461,7 +461,27 @@ const AuthPanel: React.FC<AuthPanelProps> = ({ onLoginSuccess }) => {
       } else {
         console.log('Plan FREE guardado correctamente:', subscriptionRows);
         alert(
-          'Plan GRATUITO activado. Tienes 1,500 tokens disponibles para probar ChatMig.'
+          'Plan GRATUITO activado. Tienes 3,000 tokens disponibles para probar ChatMig.'
+        );
+      }
+
+      const { error: quotaError } = await supabase
+        .from('account_quotas')
+        .upsert(
+          {
+            user_email: currentUser.email,
+            messages_remaining: 0,
+            messages_max: 0,
+            tokens_remaining: 3000,
+            tokens_max: 3000,
+          },
+          { onConflict: 'user_email' },
+        );
+
+      if (quotaError) {
+        console.warn(
+          '[AuthPanel] No se pudo inicializar account_quotas:',
+          quotaError.message,
         );
       }
 
