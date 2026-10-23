@@ -124,7 +124,7 @@ const AuthPanel: React.FC<AuthPanelProps> = ({ onLoginSuccess }) => {
         const { error } = await supabase.auth.resetPasswordForEmail(
           targetEmail,
           {
-            redirectTo: window.location.origin,
+            redirectTo: `${window.location.origin}/reset-password`,
           }
         );
 
