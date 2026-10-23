@@ -85,20 +85,17 @@ h6 {
   @apply bg-slate-800 text-slate-200;
 }
 
-/* Inputs y textarea SIEMPRE texto negro y fondo blanco */
+/* Los componentes controlan sus propios colores.
+   Evitamos overrides globales que rompan el modo oscuro y accesibilidad. */
+input,
 textarea,
-input {
-  color: #000000 !important;         /* texto negro puro */
-  background-color: #ffffff !important; /* fondo blanco */
+select,
+button {
+  font: inherit;
 }
 
-textarea::placeholder,
-input::placeholder {
-  color: #6b7280 !important;         /* gray-500, placeholder gris */
-}
-/* Chat: todo texto en negro, sí o sí */
-.chat-window,
-.chat-window * {
-  color: #000000 !important;
+input::placeholder,
+textarea::placeholder {
+  color: #64748b;
 }
 
