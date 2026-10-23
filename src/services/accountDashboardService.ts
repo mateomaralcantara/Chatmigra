@@ -1,42 +1,146 @@
-import { AccountDashboardData, Plan } from '../types';
+import {
+  type AccountDashboardData,
+  type AccountPayment,
+  type ActivityEvent,
+  type PaymentStatus,
+  Plan,
+  type SubscriptionStatus,
+} from '../types';
+import { supabase } from './supabaseClient';
 
-// This function simulates fetching data from a backend that would query Supabase tables.
-// In a real application, you would pass the user's ID to this function.
-export const getAccountDashboardData = async (): Promise<AccountDashboardData> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 600));
+const FREE_TOKENS_MAX = 3000;
 
-  // This is where you would typically make a call to your backend or directly to Supabase
-  // using RPC functions for security.
-  // e.g., const { data, error } = await supabase.rpc('get_user_dashboard_data');
+const planLabel = (plan: Plan): string => {
+  if (plan === Plan.PREMIUM) return 'Premium';
+  if (plan === Plan.PRO) return 'Pro';
+  return 'Free';
+};
 
-  // For now, we return mock data based on a simulated 'pro' plan user.
-  const mockData: AccountDashboardData = {
+const normalizePlan = (value: unknown, fallback: Plan): Plan => {
+  return value === Plan.PREMIUM || value === Plan.PRO || value === Plan.FREE
+    ? value
+    : fallback;
+};
+
+const normalizeSubscriptionStatus = (value: unknown): SubscriptionStatus => {
+  const allowed: SubscriptionStatus[] = [
+    'none',
+    'active',
+    'past_due',
+    'canceled',
+    'incomplete',
+    'trialing',
+  ];
+  return allowed.includes(value as SubscriptionStatus)
+    ? (value as SubscriptionStatus)
+    : 'none';
+};
+
+const normalizePaymentStatus = (value: unknown): PaymentStatus => {
+  const allowed: PaymentStatus[] = ['paid', 'pending', 'failed', 'refunded'];
+  return allowed.includes(value as PaymentStatus)
+    ? (value as PaymentStatus)
+    : 'pending';
+};
+
+export const getAccountDashboardData = async (
+  userEmail: string,
+  fallbackPlan: Plan,
+): Promise<AccountDashboardData> => {
+  const [subscriptionResult, paymentsResult, activityResult, quotaResult] =
+    await Promise.all([
+      supabase
+        .from('subscriptions')
+        .select('plan,status,updated_at')
+        .eq('user_email', userEmail)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('payments')
+        .select('id,created_at,amount,status')
+        .eq('user_email', userEmail)
+        .order('created_at', { ascending: false })
+        .limit(30),
+      supabase
+        .from('user_activity')
+        .select('id,type,created_at,metadata')
+        .eq('user_email', userEmail)
+        .order('created_at', { ascending: false })
+        .limit(30),
+      supabase
+        .from('account_quotas')
+        .select('messages_remaining,messages_max,tokens_remaining,tokens_max')
+        .eq('user_email', userEmail)
+        .maybeSingle(),
+    ]);
+
+  const subscriptionRow = subscriptionResult.data as
+    | { plan?: unknown; status?: unknown; updated_at?: string | null }
+    | null;
+
+  const planId = normalizePlan(subscriptionRow?.plan, fallbackPlan);
+
+  const payments: AccountPayment[] = (paymentsResult.data ?? []).map((row) => {
+    const item = row as {
+      id: string;
+      created_at: string;
+      amount: number | string;
+      status: unknown;
+    };
+
+    const parsedAmount =
+      typeof item.amount === 'number' ? item.amount : Number(item.amount);
+
+    return {
+      id: item.id,
+      date: item.created_at,
+      amount: Number.isFinite(parsedAmount) ? parsedAmount : 0,
+      status: normalizePaymentStatus(item.status),
+    };
+  });
+
+  const activity: ActivityEvent[] = (activityResult.data ?? []).map((row) => {
+    const item = row as {
+      id: string;
+      type: string;
+      created_at: string;
+      metadata?: Record<string, unknown> | null;
+    };
+
+    return {
+      id: item.id,
+      type: item.type,
+      createdAt: item.created_at,
+      metadata: item.metadata ?? undefined,
+    };
+  });
+
+  const quotaRow = quotaResult.data as
+    | {
+        messages_remaining?: number | null;
+        messages_max?: number | null;
+        tokens_remaining?: number | null;
+        tokens_max?: number | null;
+      }
+    | null;
+
+  const defaultTokens = planId === Plan.FREE ? FREE_TOKENS_MAX : 250_000;
+
+  return {
     subscription: {
-      planId: Plan.PRO,
-      planName: 'Pro Plan',
-      status: 'active',
-      currentPeriodEnd: new Date(Date.now() + 25 * 24 * 60 * 60 * 1000).toLocaleDateString('es-ES', {
-        year: 'numeric', month: 'long', day: 'numeric'
-      }),
+      planId,
+      planName: planLabel(planId),
+      status: normalizeSubscriptionStatus(subscriptionRow?.status),
+      currentPeriodEnd: subscriptionRow?.updated_at ?? null,
     },
     quotas: {
-      messagesRemaining: 432,
-      messagesMax: 1000,
-      tokensRemaining: 185430,
-      tokensMax: 250000,
+      messagesRemaining: quotaRow?.messages_remaining ?? 0,
+      messagesMax: quotaRow?.messages_max ?? 0,
+      tokensRemaining: quotaRow?.tokens_remaining ?? defaultTokens,
+      tokensMax: quotaRow?.tokens_max ?? defaultTokens,
     },
-    payments: [
-      { id: 'pi_3Pabcde...', date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toLocaleDateString('es-ES'), amount: '$19.95 USD', status: 'Pagado' },
-      { id: 'pi_3Oxyz...', date: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toLocaleDateString('es-ES'), amount: '$19.95 USD', status: 'Pagado' },
-      { id: 'pi_3N123...', date: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toLocaleDateString('es-ES'), amount: '$19.95 USD', status: 'Pagado' },
-    ],
+    payments,
+    activity,
   };
-
-  // You could throw an error to test the error state in the UI
-  // if (Math.random() > 0.8) {
-  //   throw new Error("Simulated server error");
-  // }
-
-  return mockData;
 };
