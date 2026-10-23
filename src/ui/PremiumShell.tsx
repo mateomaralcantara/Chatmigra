@@ -64,10 +64,12 @@ export default function PremiumShell({
         <nav className="cm-main-nav">
           <button
             type="button"
-            onClick={() => emit('chatmi:search')}
+            disabled
+            aria-disabled="true"
+            title="Búsqueda avanzada: próximamente"
           >
             <span>⌕</span>
-            <strong>Buscar chats</strong>
+            <strong>Buscar chats · Próximamente</strong>
           </button>
 
           <button
@@ -80,10 +82,12 @@ export default function PremiumShell({
 
           <button
             type="button"
-            onClick={() => emit('chatmi:navigate', 'tutor')}
+            disabled
+            aria-disabled="true"
+            title="Tutor IA: próximamente"
           >
             <span>◈</span>
-            <strong>Tutor IA</strong>
+            <strong>Tutor IA · Próximamente</strong>
           </button>
 
           <button
@@ -104,10 +108,12 @@ export default function PremiumShell({
 
           <button
             type="button"
-            onClick={() => emit('chatmi:documents')}
+            disabled
+            aria-disabled="true"
+            title="Documentos: próximamente"
           >
             <span>▤</span>
-            <strong>Documentos</strong>
+            <strong>Documentos · Próximamente</strong>
           </button>
 
           <button
@@ -153,7 +159,7 @@ export default function PremiumShell({
             </div>
 
             <div>
-              <strong>Plan Free</strong>
+              <strong>Plan y uso</strong>
               <span>ChatMi</span>
             </div>
           </div>
@@ -163,8 +169,8 @@ export default function PremiumShell({
           </div>
 
           <div className="cm-token-copy">
-            <span>Hasta</span>
-            <strong>3,000 tokens</strong>
+            <span>Consulta</span>
+            <strong>tu uso real</strong>
           </div>
 
           <button
@@ -236,8 +242,8 @@ export default function PremiumShell({
             </span>
 
             <span className="cm-tool-copy">
-              <strong>Generar imagen</strong>
-              <small>Inteligencia visual</small>
+              <strong>Imágenes de apoyo</strong>
+              <small>Integradas en las respuestas</small>
             </span>
 
             <span className="cm-chevron">
@@ -247,7 +253,9 @@ export default function PremiumShell({
 
           <button
             type="button"
-            onClick={() => emit('chatmi:documents')}
+            disabled
+            aria-disabled="true"
+            title="Análisis de documentos: próximamente"
           >
             <span className="cm-tool-icon cm-blue">
               ▤
@@ -255,7 +263,7 @@ export default function PremiumShell({
 
             <span className="cm-tool-copy">
               <strong>Analizar documento</strong>
-              <small>PDF, DOC y texto</small>
+              <small>Próximamente</small>
             </span>
 
             <span className="cm-chevron">
@@ -283,7 +291,9 @@ export default function PremiumShell({
 
           <button
             type="button"
-            onClick={() => emit('chatmi:code')}
+            disabled
+            aria-disabled="true"
+            title="Asistente de código: próximamente"
           >
             <span className="cm-tool-icon cm-purple">
               ◇
@@ -291,7 +301,7 @@ export default function PremiumShell({
 
             <span className="cm-tool-copy">
               <strong>Crear código</strong>
-              <small>Desarrollo asistido</small>
+              <small>Próximamente</small>
             </span>
 
             <span className="cm-chevron">
@@ -333,9 +343,10 @@ export default function PremiumShell({
           <button
             type="button"
             className="cm-files-button"
-            onClick={() => emit('chatmi:documents')}
+            disabled
+            aria-disabled="true"
           >
-            Ver archivos
+            Archivos · Próximamente
           </button>
         </section>
       </aside>
