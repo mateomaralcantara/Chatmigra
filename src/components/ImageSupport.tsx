@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { authenticatedFetch } from '../services/apiClient';
 
 interface ImageSupportProps {
   query: string;
@@ -21,7 +22,7 @@ const ImageSupport: React.FC<ImageSupportProps> = ({ query, count = 1 }) => {
         setLoading(true);
         setError('');
 
-        const res = await fetch(
+        const res = await authenticatedFetch(
           `/api/image-search?q=${encodeURIComponent(query)}&n=${count}`
         );
         if (!res.ok) throw new Error('Error buscando imágenes');
