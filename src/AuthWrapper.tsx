@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import App from './App';
 import AuthPanel from './components/AuthPanel';
-import { User, Plan } from './types';
+import { Plan, type User } from './types';
+import { supabase } from './services/supabaseClient';
 
-interface Session {
+interface SessionCache {
   user: User;
   plan: Plan;
 }
@@ -12,61 +13,164 @@ type InitialView = 'chat' | 'dashboard';
 
 const SESSION_STORAGE_KEY = 'chatmig_session';
 
+const normalizePlan = (value: unknown): Plan => {
+  if (value === Plan.PREMIUM || value === Plan.PRO || value === Plan.FREE) {
+    return value;
+  }
+
+  return Plan.FREE;
+};
+
+function readSessionCache(): SessionCache | null {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as Partial<SessionCache>;
+
+    if (!parsed.user?.email || !parsed.plan) return null;
+
+    return {
+      user: parsed.user,
+      plan: normalizePlan(parsed.plan),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionCache(value: SessionCache | null): void {
+  try {
+    if (!value) {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+      return;
+    }
+
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    // La sesión real es Supabase; localStorage es solo cache de UX.
+  }
+}
+
 const AuthWrapper: React.FC = () => {
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<SessionCache | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [initialView, setInitialView] = useState<InitialView>('chat');
 
-  // 🔁 Restaurar sesión al cargar la app
   useEffect(() => {
-    try {
-      const storedSession = localStorage.getItem(SESSION_STORAGE_KEY);
+    let active = true;
 
-      if (!storedSession) {
-        setIsLoading(false);
-        return;
+    const restore = async () => {
+      try {
+        const cached = readSessionCache();
+        const { data, error } = await supabase.auth.getSession();
+
+        if (error || !data.session?.user) {
+          writeSessionCache(null);
+          if (active) setSession(null);
+          return;
+        }
+
+        const authUser = data.session.user;
+        const email = authUser.email;
+
+        if (!email) {
+          writeSessionCache(null);
+          if (active) setSession(null);
+          return;
+        }
+
+        const metadata = authUser.user_metadata as {
+          first_name?: unknown;
+          last_name?: unknown;
+        };
+
+        const user: User = {
+          email,
+          firstName:
+            typeof metadata.first_name === 'string'
+              ? metadata.first_name
+              : cached?.user.email === email
+                ? cached.user.firstName
+                : 'Usuario',
+          lastName:
+            typeof metadata.last_name === 'string'
+              ? metadata.last_name
+              : cached?.user.email === email
+                ? cached.user.lastName
+                : '',
+        };
+
+        const { data: subscription } = await supabase
+          .from('subscriptions')
+          .select('plan,status')
+          .eq('user_email', email)
+          .eq('status', 'active')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const plan = normalizePlan(
+          subscription?.plan ??
+            (cached?.user.email === email ? cached.plan : Plan.FREE),
+        );
+
+        const restored: SessionCache = { user, plan };
+        writeSessionCache(restored);
+
+        if (active) {
+          setSession(restored);
+          setInitialView('chat');
+        }
+      } catch (error) {
+        console.error('[AuthWrapper] No se pudo restaurar la sesión:', error);
+        writeSessionCache(null);
+        if (active) setSession(null);
+      } finally {
+        if (active) setIsLoading(false);
       }
+    };
 
-      const parsed = JSON.parse(storedSession) as Session;
+    void restore();
 
-      if (parsed?.user?.email) {
-        console.log('[AuthWrapper] Sesión restaurada desde localStorage:', parsed);
-        setSession(parsed);
-        setInitialView('chat'); // quien vuelve entra directo al chat
-      } else {
-        console.warn('[AuthWrapper] Sesión inválida, limpiando storage');
-        localStorage.removeItem(SESSION_STORAGE_KEY);
+    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        writeSessionCache(null);
+        if (active) {
+          setSession(null);
+          setInitialView('chat');
+        }
       }
-    } catch (error) {
-      console.error('[AuthWrapper] Error parseando sesión desde localStorage:', error);
-      localStorage.removeItem(SESSION_STORAGE_KEY);
-    } finally {
-      setIsLoading(false);
-    }
+    });
+
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
-  // ✅ Guardar sesión cuando el usuario inicia sesión / se registra
   const handleLoginSuccess = useCallback((user: User, plan: Plan) => {
-    const newSession: Session = { user, plan };
+    const nextSession: SessionCache = {
+      user,
+      plan: normalizePlan(plan),
+    };
 
-    try {
-      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(newSession));
-      console.log('[AuthWrapper] Sesión guardada en localStorage:', newSession);
-      setSession(newSession);
-      setInitialView('dashboard'); // primer login → mándalo al dashboard/mi cuenta
-    } catch (error) {
-      console.error('[AuthWrapper] Error guardando sesión en localStorage:', error);
-    }
+    writeSessionCache(nextSession);
+    setSession(nextSession);
+    setInitialView('dashboard');
   }, []);
 
-  // 🚪 Logout limpio
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
     try {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
-      console.log('[AuthWrapper] Sesión eliminada de localStorage');
+      const { error } = await supabase.auth.signOut();
+
+      if (error) {
+        console.warn('[AuthWrapper] Supabase signOut:', error.message);
+      }
     } catch (error) {
-      console.error('[AuthWrapper] Error eliminando sesión de localStorage:', error);
+      console.error('[AuthWrapper] Error cerrando sesión:', error);
     } finally {
+      writeSessionCache(null);
       setSession(null);
       setInitialView('chat');
     }
@@ -74,31 +178,13 @@ const AuthWrapper: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <svg
-            className="mx-auto h-12 w-12 animate-spin text-blue-600"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            />
-          </svg>
-          <p className="mt-4 text-lg font-medium text-gray-700 dark:text-gray-300">
-            Cargando sesión...
-          </p>
+      <div className="flex h-screen items-center justify-center bg-slate-950">
+        <div className="text-center text-slate-200">
+          <div
+            className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-slate-700 border-t-blue-500"
+            aria-label="Cargando"
+          />
+          <p className="mt-4 text-sm font-medium">Validando sesión…</p>
         </div>
       </div>
     );
@@ -109,7 +195,9 @@ const AuthWrapper: React.FC = () => {
       <App
         user={session.user}
         plan={session.plan}
-        onLogout={handleLogout}
+        onLogout={() => {
+          void handleLogout();
+        }}
         initialView={initialView}
       />
     );
