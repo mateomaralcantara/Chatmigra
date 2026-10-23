@@ -1,7 +1,12 @@
 import { GoogleGenAI } from '@google/genai';
+import {
+  authenticateRequest,
+  resolveServerPlan,
+} from '../lib/serverAuth';
 
 interface RequestLike {
   method?: string;
+  headers?: Record<string, string | string[] | undefined>;
 }
 
 interface ResponseLike {
@@ -18,11 +23,27 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   }
 
   try {
+    const auth = await authenticateRequest(req);
+
+    if (!auth) {
+      return res.status(401).json({ error: 'Sesión inválida o expirada.' });
+    }
+
+    const plan = await resolveServerPlan(auth);
+
+    if (plan !== 'premium') {
+      return res.status(403).json({
+        error: 'El agente de voz está disponible solo para Premium.',
+      });
+    }
+
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 
     if (!apiKey) {
       console.error('[gemini-live] Missing GEMINI_API_KEY/GOOGLE_API_KEY');
-      return res.status(500).json({ error: 'Gemini server configuration is missing.' });
+      return res.status(500).json({
+        error: 'Gemini server configuration is missing.',
+      });
     }
 
     const ai = new GoogleGenAI({ apiKey });
@@ -36,7 +57,9 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
 
     if (!authToken.name) {
       console.error('[gemini-live] Gemini returned an empty auth token');
-      return res.status(502).json({ error: 'Could not create Gemini Live token.' });
+      return res.status(502).json({
+        error: 'Could not create Gemini Live token.',
+      });
     }
 
     return res.status(200).json({
@@ -47,6 +70,8 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[gemini-live] Token creation failed:', message);
-    return res.status(500).json({ error: 'Could not create Gemini Live token.' });
+    return res.status(500).json({
+      error: 'Could not create Gemini Live token.',
+    });
   }
 }
