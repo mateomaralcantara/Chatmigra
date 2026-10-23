@@ -8,6 +8,7 @@ import {
 
 import { type ChatMessage, Plan } from '../types';
 import { createBlob, decode, decodeAudioData } from '../../utils/audio';
+import { authenticatedFetch } from './apiClient';
 
 const TEXT_MODEL = 'gemini-2.5-flash';
 const VOICE_MODEL = 'gemini-live-2.5-flash-preview';
@@ -40,11 +41,13 @@ interface ChatApiResponse {
   model?: string;
   usageMetadata?: ChatApiUsage | null;
   error?: string;
+  tokensRemaining?: number | null;
 }
 
 export interface ChatStreamChunk {
   text: string;
   usageMetadata?: ChatApiUsage | null;
+  tokensRemaining?: number | null;
 }
 
 async function readJsonResponse<T>(response: Response): Promise<T> {
@@ -65,7 +68,7 @@ export const runChatStream = async (
   chatHistory: ChatMessage[],
   plan: Plan,
 ): Promise<AsyncGenerator<ChatStreamChunk>> => {
-  const response = await fetch(apiUrl('/api/gemini'), {
+  const response = await authenticatedFetch(apiUrl('/api/gemini'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -92,6 +95,7 @@ export const runChatStream = async (
     yield {
       text,
       usageMetadata: data.usageMetadata ?? null,
+      tokensRemaining: data.tokensRemaining ?? null,
     };
   }
 
@@ -114,7 +118,7 @@ interface EphemeralTokenResponse {
 }
 
 async function getLiveClient(): Promise<GoogleGenAI> {
-  const response = await fetch(apiUrl('/api/gemini-ephemeral-token'), {
+  const response = await authenticatedFetch(apiUrl('/api/gemini-ephemeral-token'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
