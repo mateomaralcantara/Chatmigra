@@ -1,45 +1,47 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ChatMig - AI Immigration Assistant</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="icon" type="image/x-icon" href="/chatmig_favicon.ico">
+    <title>ChatMig - Asistente migratorio con IA</title>
+    <meta
+      name="description"
+      content="ChatMig: asistente migratorio con chat, voz y preparación de procesos."
+    />
+    <meta name="theme-color" content="#080a0e" />
+    <meta name="color-scheme" content="dark" />
 
-    <style>
-      body {
-        font-family: 'Inter', sans-serif;
-      }
-    </style>
-    <script type="importmap">
-{
-  "imports": {
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
-    "@paypal/react-paypal-js": "https://aistudiocdn.com/@paypal/react-paypal-js@^8.9.2",
-    "react-markdown": "https://esm.sh/react-markdown@9",
-    "remark-gfm": "https://esm.sh/remark-gfm@4",
-    "@paypal/paypal-js": "https://aistudiocdn.com/@paypal/paypal-js@^9.0.1"
-  }
-}
-    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="icon" type="image/x-icon" href="/chatmig_favicon.ico" />
 
-    <!-- Event snippet for Registro conversion page -->
     <script>
-      gtag('event', 'conversion', {
-        'send_to': 'AW-17788908639/qgjjCPCI_80bEN_otKJC',
-        'value': 1.0,
-        'currency': 'USD'
-      });
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        window.dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('config', 'AW-17788908639');
+
+      if (location.pathname.includes('/registro-exitoso')) {
+        gtag('event', 'conversion', {
+          send_to: 'AW-17788908639/qgjjCPCI_80bEN_otKJC',
+          value: 1.0,
+          currency: 'USD'
+        });
+      }
     </script>
+    <script
+      async
+      src="https://www.googletagmanager.com/gtag/js?id=AW-17788908639"
+    ></script>
   </head>
   <body>
+    <noscript>Necesitas habilitar JavaScript para usar ChatMig.</noscript>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

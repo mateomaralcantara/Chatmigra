@@ -80,7 +80,7 @@ const AccountDashboard: React.FC<AccountDashboardProps> = ({
       try {
         setIsLoading(true);
         setError(null);
-        const dashboardData = await getAccountDashboardData();
+        const dashboardData = await getAccountDashboardData(plan);
         setData(dashboardData);
       } catch (e) {
         console.error('Error cargando dashboard:', e);
@@ -91,7 +91,7 @@ const AccountDashboard: React.FC<AccountDashboardProps> = ({
     };
 
     fetchData();
-  }, []);
+  }, [plan]);
 
   // scroll automático al plan Premium si viene focusPremium=true
   useEffect(() => {

@@ -467,6 +467,38 @@ const App: React.FC<AppProps> = ({ user, plan, onLogout, initialView }) => {
     setFocusPremium(true);
   }, []);
 
+  useEffect(() => {
+    const onNewChat = () => handleNewConversation();
+    const onNavigate = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail;
+      if (detail === 'chat' || detail === 'dashboard') {
+        setCurrentView(detail);
+      }
+    };
+    const onVoice = () => {
+      void toggleVoiceAgent();
+    };
+    const onUpgrade = () => {
+      goToPremiumPlan();
+    };
+
+    window.addEventListener('chatmi:new-chat', onNewChat);
+    window.addEventListener('chatmi:navigate', onNavigate);
+    window.addEventListener('chatmi:voice', onVoice);
+    window.addEventListener('chatmi:upgrade', onUpgrade);
+
+    return () => {
+      window.removeEventListener('chatmi:new-chat', onNewChat);
+      window.removeEventListener('chatmi:navigate', onNavigate);
+      window.removeEventListener('chatmi:voice', onVoice);
+      window.removeEventListener('chatmi:upgrade', onUpgrade);
+    };
+  }, [
+    handleNewConversation,
+    toggleVoiceAgent,
+    goToPremiumPlan,
+  ]);
+
   // ---------- DERIVADOS ----------
 
   const showSuggestions = useMemo(

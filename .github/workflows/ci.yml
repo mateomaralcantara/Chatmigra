@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build:
-    name: Test, typecheck and build
+    name: Typecheck and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -35,5 +35,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build gate
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Production build
         run: npm run build
