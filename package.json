@@ -9,8 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
-    "test": "echo \"(sin tests todavía)\" && exit 0",
-    "check": "npm run lint && npm run typecheck && npm run build",
+    "test": "node scripts/smoke-test.mjs",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "deploy-all": "npm run build && git add . && git commit -m \"deploy auto\" || echo \"(sin cambios que commitear)\" && git push origin main",
     "check:gemini": "node scripts/checkGeminiKey.mjs"
   },
