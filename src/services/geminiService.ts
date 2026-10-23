@@ -1,222 +1,102 @@
 /// <reference types="vite/client" />
 
-// services/geminiService.ts
 import {
   GoogleGenAI,
-  GenerateContentResponse,
   Modality,
-  LiveServerMessage,
+  type LiveServerMessage,
 } from '@google/genai';
 
-import { ChatMessage, Plan } from '../types';
+import { type ChatMessage, Plan } from '../types';
 import { createBlob, decode, decodeAudioData } from '../../utils/audio';
 
-/* ---------- PROMPTS BASE ---------- */
+const TEXT_MODEL = 'gemini-2.5-flash';
+const VOICE_MODEL = 'gemini-live-2.5-flash-preview';
+const API_BASE = String(import.meta.env.VITE_API_BASE ?? '').replace(/\/+$/, '');
+
+const apiUrl = (path: string): string => `${API_BASE}${path}`;
 
 const getBaseSystemInstruction = (plan: Plan) => `
-Eres **ChatMig**, un asistente migratorio conversacional especializado.
-
-Tu misión:
-Ayudar a personas y empresas a entender y planificar procesos migratorios (visas, residencia, permisos de trabajo, estudios, reunificación familiar, viajes de negocio, etc.), dando explicaciones claras, estructuradas y accionables.
-
-Identidad y tono:
-- Hablas principalmente en el idioma del usuario (por defecto español neutro).
-- Tono: profesional pero cercano, empático, directo.
-- No prometes resultados ni garantizas aprobaciones.
-- Respeta que las historias migratorias son sensibles.
-
-Límites (legal / seguridad):
-- NO eres abogado ni sustituto de asesoría legal profesional.
-- NO das asesoría legal personalizada; ofreces orientación general basada en lo que el usuario cuenta.
-- Anima a confirmar en sitios oficiales y, en casos complejos, con abogados migratorios.
-
-Contexto de suscripción:
-El plan de suscripción actual del usuario es: "${plan}". Debes seguir estrictamente las reglas para este plan.
+Eres ChatMig, un asistente migratorio conversacional.
+Habla principalmente en el idioma del usuario, por defecto español neutro.
+Sé profesional, claro y directo. No garantices aprobaciones.
+No sustituyes asesoría legal profesional.
+Plan actual: "${plan}".
 `;
-
-/* ---------- FORMATO DE BLOQUES INTERACTIVOS ---------- */
-
-const STRUCTURED_BLOCKS_GUIDE = `
-Tienes 3 tipos de bloques interactivos que puedes usar dentro de la respuesta de texto:
-
-1) Checklist (para pasos y documentos)
-Usa exactamente este formato:
-
-<checklist-json>
-{
-  "title": "Checklist corta y clara",
-  "items": [
-    {
-      "task": "Escribir la tarea concreta",
-      "status": "Pendiente | En Progreso | Completado",
-      "notes": "Notas breves opcionales"
-    }
-  ]
-}
-</checklist-json>
-
-2) Línea de tiempo (timeline)
-Formato:
-
-<timeline-json>
-{
-  "title": "Título de la línea de tiempo",
-  "items": [
-    {
-      "label": "Semana 1",
-      "description": "Qué debe hacer aquí",
-      "status": "Pendiente | En Progreso | Completado"
-    }
-  ]
-}
-</timeline-json>
-
-3) Imagen de apoyo (SIEMPRE OBLIGATORIO)
-Al final de TU respuesta, SIEMPRE añade un bloque así:
-
-<image-json>
-{
-  "query": "frase corta para buscar una imagen útil y representativa",
-  "cantidad": 3
-}
-</image-json>
-
-Reglas del bloque <image-json>:
-- "query" debe describir la imagen que mejor ayude a visualizar la respuesta.
-  Ejemplos:
-  - Si explicas DS-160: "formulario DS-160 ejemplo"
-  - Si explicas pasos para viajar a EE.UU.: "aeropuerto internacional", "pasaporte y boarding pass"
-  - Si hablas de visa de estudiante USA: "universidad en Estados Unidos estudiantes internacionales"
-- "cantidad" suele ser 2 o 3.
-- El bloque debe contener SOLO JSON válido, sin comentarios ni markdown.
-
-Reglas generales:
-- Los bloques JSON deben ir tal cual, sin markdown alrededor.
-- Si el usuario no los necesita, puedes omitir checklist/timeline, pero NUNCA omitas el bloque <image-json>.
-`;
-
-/* ---------- PROMPT CHAT TEXTO ---------- */
-
-const getChatSystemInstruction = (plan: Plan) => `
-${getBaseSystemInstruction(plan)}
-
-${STRUCTURED_BLOCKS_GUIDE}
-
-Reglas según plan:
-
-1) Plan "free"
-- Respuestas más cortas y al grano.
-- Máx. 5–7 viñetas principales.
-- No entregues plantillas extensas (e-mails, cartas, guiones).
-- Un solo escenario principal, no 3 alternativas.
-- Si el caso es muy complejo, explica lo básico y sugiere plan superior o asesoría profesional.
-
-2) Plan "pro"
-- Más profundidad: requisitos, plazos típicos, errores comunes y tips prácticos.
-- Hasta 2 estrategias alternativas (Opción A / Opción B).
-- Ofrece checklists concretas usando <checklist-json> cuando tenga sentido.
-- Para procesos con varias fases, usa <timeline-json> si ayuda.
-
-3) Plan "premium"
-- Respuestas más completas, anticipando dudas avanzadas.
-- Puedes:
-  - Desglosar pasos por semanas o fases (ideal con <timeline-json>).
-  - Incluir ejemplos de respuestas para entrevistas consulares.
-  - Sugerir redacción para correos formales (sin copiar textos legales extensos).
-  - Hacer mini-simulaciones de entrevista (pregunta + buena forma de responder).
-- No cites leyes concretas como asesoría jurídica personalizada.
-
-Nunca preguntes al usuario cuál es su plan; usa siempre el valor "${plan}" como referencia interna.
-
-Flujo base:
-1. Haz un mini “triage”:
-   - País de ciudadanía.
-   - País de destino.
-   - Objetivo (turismo, estudios, trabajo, residencia, negocio, reunificación, asilo, etc.).
-   - Fechas relevantes.
-   - Situaciones especiales si el usuario las menciona.
-
-2. Si ya dio esa info, no repitas preguntas; mejor resume y confirma.
-
-3. Organiza tu respuesta:
-   - Tipo de visa/proceso probable.
-   - Riesgos evidentes.
-   - Nivel de detalle según el plan.
-
-Estructura recomendada:
-1. **Resumen rápido del caso**
-2. **Vías migratorias posibles**
-3. **Requisitos principales**
-4. **Pasos del proceso**
-5. **Riesgos y alertas**
-6. **Siguiente paso concreto**
-
-Estilo:
-- Párrafos cortos, listas y pasos numerados.
-- Sin jerga excesiva.
-- Puedes usar algunos emojis discretos (✅, ⚠️, ⏱️).
-- Usa markdown SOLO en el texto principal, nunca dentro de los bloques JSON.
-
-IMPORTANTE: SIEMPRE termina la respuesta con un bloque <image-json> válido.
-Responde en español.
-`;
-
-/* ---------- PROMPT VOZ ---------- */
 
 const getVoiceSystemInstruction = (plan: Plan) => `
 ${getBaseSystemInstruction(plan)}
-- Eres un agente de voz. Respuestas concisas y conversacionales.
-- No uses Markdown ni bloques JSON en voz.
-- Adapta la profundidad al plan "${plan}", pero mantén claridad y naturalidad.
-- Cierra tus turnos de forma clara para que el usuario sepa cuándo hablar.
+Eres un agente de voz. Responde de forma concisa, natural y conversacional.
+No uses Markdown ni bloques JSON en voz.
 `;
 
-/* ---------- CLIENTE GEMINI ---------- */
-
-let ai: GoogleGenAI | null = null;
-
-function getAiClient() {
-  if (ai) return ai;
-
-  const API_KEY = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
-  if (!API_KEY) {
-    throw new Error('VITE_GEMINI_API_KEY no está definida en el entorno de Vite.');
-  }
-
-  // Log mínimo para debug (sin exponer la clave completa)
-  console.log('[Gemini] API key cargada (prefijo):', API_KEY.slice(0, 4), '****');
-
-  ai = new GoogleGenAI({ apiKey: API_KEY });
-  return ai;
+interface ChatApiUsage {
+  promptTokenCount: number;
+  candidatesTokenCount: number;
+  totalTokenCount: number;
 }
 
-/* ---------- CHAT STREAM (TEXTO) ---------- */
+interface ChatApiResponse {
+  text?: string;
+  model?: string;
+  usageMetadata?: ChatApiUsage | null;
+  error?: string;
+}
+
+export interface ChatStreamChunk {
+  text: string;
+  usageMetadata?: ChatApiUsage | null;
+}
+
+async function readJsonResponse<T>(response: Response): Promise<T> {
+  const text = await response.text();
+
+  if (!text) {
+    return {} as T;
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`Respuesta inválida del servidor (HTTP ${response.status}).`);
+  }
+}
 
 export const runChatStream = async (
   chatHistory: ChatMessage[],
-  plan: Plan
-): Promise<AsyncGenerator<GenerateContentResponse>> => {
-  const client = getAiClient();
-  const model = 'gemini-2.5-flash';
-  const systemInstruction = getChatSystemInstruction(plan);
-
-  const history = chatHistory.slice(0, -1).map((msg) => ({
-    role: msg.role, // 'user' | 'model'
-    parts: [{ text: msg.content }],
-  }));
-
-  const chat = client.chats.create({
-    model,
-    config: { systemInstruction },
-    history,
+  plan: Plan,
+): Promise<AsyncGenerator<ChatStreamChunk>> => {
+  const response = await fetch(apiUrl('/api/gemini'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messages: chatHistory,
+      plan,
+      model: TEXT_MODEL,
+    }),
   });
 
-  const lastUserMessage = chatHistory[chatHistory.length - 1]?.content ?? '';
+  const data = await readJsonResponse<ChatApiResponse>(response);
 
-  return chat.sendMessageStream({ message: lastUserMessage });
+  if (!response.ok) {
+    throw new Error(data.error || `Gemini backend HTTP ${response.status}.`);
+  }
+
+  const text = data.text?.trim();
+  if (!text) {
+    throw new Error('Gemini no devolvió contenido.');
+  }
+
+  async function* singleResponse(): AsyncGenerator<ChatStreamChunk> {
+    yield {
+      text,
+      usageMetadata: data.usageMetadata ?? null,
+    };
+  }
+
+  return singleResponse();
 };
-
-/* ---------- VOICE AGENT (Live API) ---------- */
 
 interface VoiceAgentCallbacks {
   onOpen: () => void;
@@ -224,24 +104,57 @@ interface VoiceAgentCallbacks {
   onModelTranscription: (text: string) => void;
   onModelSpeaking: (isSpeaking: boolean) => void;
   onTurnComplete: () => void;
-  onError: (error: any) => void;
+  onError: (error: unknown) => void;
   onClose: () => void;
+}
+
+interface EphemeralTokenResponse {
+  token?: string;
+  error?: string;
+}
+
+async function getLiveClient(): Promise<GoogleGenAI> {
+  const response = await fetch(apiUrl('/api/gemini-ephemeral-token'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: '{}',
+  });
+
+  const data = await readJsonResponse<EphemeralTokenResponse>(response);
+
+  if (!response.ok || !data.token) {
+    throw new Error(data.error || `Gemini Live token HTTP ${response.status}.`);
+  }
+
+  return new GoogleGenAI({
+    apiKey: data.token,
+    httpOptions: { apiVersion: 'v1alpha' },
+  });
 }
 
 export const connectToVoiceAgent = async (
   callbacks: VoiceAgentCallbacks,
-  plan: Plan
-): Promise<any> => {
-  const client = getAiClient();
+  plan: Plan,
+): Promise<unknown> => {
+  const client = await getLiveClient();
 
-  const outputAudioContext = new ((window as any).AudioContext ||
-    (window as any).webkitAudioContext)({ sampleRate: 24000 });
+  const AudioContextConstructor =
+    window.AudioContext ||
+    (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+      .webkitAudioContext;
 
+  if (!AudioContextConstructor) {
+    throw new Error('AudioContext no está disponible en este navegador.');
+  }
+
+  const outputAudioContext = new AudioContextConstructor({ sampleRate: 24000 });
   let nextStartTime = 0;
   const sources = new Set<AudioBufferSourceNode>();
 
   const sessionPromise = client.live.connect({
-    model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+    model: VOICE_MODEL,
     config: {
       responseModalities: [Modality.AUDIO],
       inputAudioTranscription: {},
@@ -253,21 +166,17 @@ export const connectToVoiceAgent = async (
         callbacks.onOpen();
 
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-        const inputAudioContext = new ((window as any).AudioContext ||
-          (window as any).webkitAudioContext)({ sampleRate: 16000 });
-
+        const inputAudioContext = new AudioContextConstructor({ sampleRate: 16000 });
         const source = inputAudioContext.createMediaStreamSource(stream);
         const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
 
         scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
-          const inputData =
-            audioProcessingEvent.inputBuffer.getChannelData(0);
+          const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
           const pcmBlob = createBlob(inputData);
 
           sessionPromise.then((session) => {
             session.sendRealtimeInput({ media: pcmBlob });
-          });
+          }).catch((error: unknown) => callbacks.onError(error));
         };
 
         source.connect(scriptProcessor);
@@ -275,20 +184,18 @@ export const connectToVoiceAgent = async (
       },
 
       onmessage: async (message: LiveServerMessage) => {
-        const modelTurn = message.serverContent?.modelTurn;
-        const parts = modelTurn?.parts;
-        const base64Audio = parts && parts[0]?.inlineData?.data;
+        const parts = message.serverContent?.modelTurn?.parts;
+        const base64Audio = parts?.[0]?.inlineData?.data;
 
         if (base64Audio) {
           callbacks.onModelSpeaking(true);
-
           nextStartTime = Math.max(nextStartTime, outputAudioContext.currentTime);
 
           const audioBuffer = await decodeAudioData(
             decode(base64Audio),
             outputAudioContext,
             24000,
-            1
+            1,
           );
 
           const source = outputAudioContext.createBufferSource();
@@ -297,9 +204,7 @@ export const connectToVoiceAgent = async (
 
           source.addEventListener('ended', () => {
             sources.delete(source);
-            if (sources.size === 0) {
-              callbacks.onModelSpeaking(false);
-            }
+            if (sources.size === 0) callbacks.onModelSpeaking(false);
           });
 
           source.start(nextStartTime);
@@ -307,25 +212,19 @@ export const connectToVoiceAgent = async (
           sources.add(source);
         }
 
-        const inputText =
-          message.serverContent?.inputTranscription?.text ?? undefined;
-        if (inputText) {
-          callbacks.onUserTranscription(inputText);
-        }
+        const inputText = message.serverContent?.inputTranscription?.text;
+        if (inputText) callbacks.onUserTranscription(inputText);
 
-        const outputText =
-          message.serverContent?.outputTranscription?.text ?? undefined;
-        if (outputText) {
-          callbacks.onModelTranscription(outputText);
-        }
+        const outputText = message.serverContent?.outputTranscription?.text;
+        if (outputText) callbacks.onModelTranscription(outputText);
 
         if (message.serverContent?.turnComplete) {
           callbacks.onTurnComplete();
         }
       },
 
-      onerror: (e: ErrorEvent) => callbacks.onError(e),
-      onclose: (e: CloseEvent) => callbacks.onClose(),
+      onerror: (event: ErrorEvent) => callbacks.onError(event.error ?? event),
+      onclose: () => callbacks.onClose(),
     },
   });
 
