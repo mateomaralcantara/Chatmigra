@@ -10,21 +10,10 @@ body,
 }
 
 body {
-  @apply bg-slate-950 text-slate-100 antialiased;
+  @apply bg-white text-slate-900 antialiased;
 }
 
-/* Que TODO el texto normal sea claro sobre el fondo oscuro */
-p,
-span,
-li,
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  color: #f9fafb;
-}
+/* Cada componente controla el contraste según su superficie; no imponer colores globales a span, p o títulos. */
 
 /* Shell general de la app */
 .app-shell {
@@ -85,20 +74,4 @@ h6 {
   @apply bg-slate-800 text-slate-200;
 }
 
-/* Inputs y textarea SIEMPRE texto negro y fondo blanco */
-textarea,
-input {
-  color: #000000 !important;         /* texto negro puro */
-  background-color: #ffffff !important; /* fondo blanco */
-}
-
-textarea::placeholder,
-input::placeholder {
-  color: #6b7280 !important;         /* gray-500, placeholder gris */
-}
-/* Chat: todo texto en negro, sí o sí */
-.chat-window,
-.chat-window * {
-  color: #000000 !important;
-}
-
+/* Los campos usan sus estilos propios: evitar !important globales que rompen los temas. */
