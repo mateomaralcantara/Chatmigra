@@ -7,7 +7,8 @@ type CaseRow = { id: string; applicant_name: string };
 type DocRow = { id: string; filename: string; mime_type: string; storage_path: string; created_at: string };
 type MessageRow = { id?: string; role: 'user' | 'model'; content: string; created_at?: string };
 type Mode = 'chat' | 'voice';
-type RecognitionResult = { results: ArrayLike<ArrayLike<{ transcript: string }>> };
+type RecognitionEntry = ArrayLike<{ transcript: string }> & { isFinal?: boolean };
+type RecognitionResult = { results: ArrayLike<RecognitionEntry> };
 type RecognitionEngine = {
   lang: string;
   continuous: boolean;
@@ -69,6 +70,10 @@ export default function ApplicantTutorChat() {
   const endRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<RecognitionEngine | null>(null);
   const voiceOnRef = useRef(false);
+  const voiceDraftRef = useRef('');
+  const voiceSessionRef = useRef('');
+  const voiceDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceRestartRef = useRef(0);
   const busyRef = useRef(false);
   const activeCaseRef = useRef(caseId);
   const messagesRef = useRef<MessageRow[]>([]);
@@ -130,6 +135,7 @@ export default function ApplicantTutorChat() {
       mountedRef.current = false;
       voiceOnRef.current = false;
       recognitionRef.current?.stop();
+      if (voiceDelayRef.current) clearTimeout(voiceDelayRef.current);
       window.speechSynthesis?.cancel();
       window.removeEventListener('popstate', pop);
     };
@@ -140,6 +146,10 @@ export default function ApplicantTutorChat() {
     setError(''); setNotice(''); setTranscript('');
     setDocs([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false);
     voiceOnRef.current = false; setVoiceOn(false);
+    voiceSessionRef.current = '';
+    voiceDraftRef.current = '';
+    if (voiceDelayRef.current) clearTimeout(voiceDelayRef.current);
+    voiceDelayRef.current = null;
     recognitionRef.current?.stop();
     window.speechSynthesis?.cancel();
     void refreshCase(caseId).catch(e => setError(e instanceof Error ? e.message : 'Error cargando expediente.'));
@@ -269,6 +279,11 @@ export default function ApplicantTutorChat() {
   const stopVoice = () => {
     voiceOnRef.current = false;
     setVoiceOn(false); setListening(false); setSpeaking(false);
+    if (voiceDelayRef.current) clearTimeout(voiceDelayRef.current);
+    voiceDelayRef.current = null;
+    voiceDraftRef.current = '';
+    voiceSessionRef.current = '';
+    voiceRestartRef.current = 0;
     recognitionRef.current?.stop();
     window.speechSynthesis?.cancel();
   };
@@ -286,22 +301,102 @@ export default function ApplicantTutorChat() {
     }
     const engine = new Recognition();
     engine.lang = 'es-DO';
-    engine.continuous = false;
-    engine.interimResults = false;
+    engine.continuous = true;
+    engine.interimResults = true;
+
+    const composedText = () => [voiceSessionRef.current, voiceDraftRef.current]
+      .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+
+    const submitRecognizedQuestion = () => {
+      voiceDelayRef.current = null;
+      if (!voiceOnRef.current || busyRef.current) return;
+      const complete = composedText();
+      if (complete.split(/\s+/).filter(Boolean).length < 3) {
+        setError('Escuché una pregunta incompleta. Repite la frase completa.');
+        return;
+      }
+      voiceSessionRef.current = '';
+      voiceDraftRef.current = '';
+      voiceRestartRef.current = 0;
+      // Stop listening before contacting Gemini; otherwise the mic can pick up
+      // the assistant's answer and submit it as a new applicant question.
+      engine.stop();
+      setListening(false);
+      setTranscript(complete);
+      void askQuestion(complete, true);
+    };
+
+    const scheduleQuestion = (delay: number) => {
+      if (voiceDelayRef.current) clearTimeout(voiceDelayRef.current);
+      voiceDelayRef.current = setTimeout(submitRecognizedQuestion, delay);
+    };
+
     engine.onresult = event => {
-      const text = event.results[0]?.[0]?.transcript?.trim();
-      if (text && voiceOnRef.current) {
-        setTranscript(text);
-        void askQuestion(text, true);
+      if (!voiceOnRef.current || busyRef.current) return;
+      const entries = Array.from(event.results);
+      voiceDraftRef.current = entries.map(entry => entry[0]?.transcript?.trim() || '')
+        .filter(Boolean).join(' ').trim();
+      const full = composedText();
+      setTranscript(full);
+      const words = full.split(/\s+/).filter(Boolean).length;
+      const finalPart = entries.some(entry => entry.isFinal !== false);
+      if (finalPart && words >= 3) {
+        setError('');
+        // Wait for further words rather than sending the first detected fragment.
+        scheduleQuestion(1700);
+      } else if (voiceDelayRef.current) {
+        clearTimeout(voiceDelayRef.current);
+        voiceDelayRef.current = null;
       }
     };
+
     engine.onerror = event => {
-      setError('No se pudo utilizar el micrófono (' + (event.error || 'error') + ').');
-      voiceOnRef.current = false; setVoiceOn(false); setListening(false);
+      if (!voiceOnRef.current || busyRef.current) return;
+      const reason = event.error || 'desconocido';
+      if (reason === 'no-speech') {
+        setError('No detecté una pregunta. Vuelve a iniciar el micrófono.');
+      } else {
+        setError('No se pudo utilizar el micrófono (' + reason + ').');
+      }
+      stopVoice();
     };
-    engine.onend = () => setListening(false);
+
+    engine.onend = () => {
+      setListening(false);
+      if (!voiceOnRef.current || busyRef.current) return;
+      if (voiceDelayRef.current) return;
+      const phrase = composedText();
+      if (phrase.split(/\s+/).filter(Boolean).length >= 3) {
+        scheduleQuestion(450);
+        return;
+      }
+      // A pause after "qué" must not create a useless API request.
+      if (!phrase) {
+        setError('No detecté una pregunta completa. Vuelve a iniciar el micrófono.');
+        stopVoice();
+        return;
+      }
+      voiceSessionRef.current = phrase;
+      voiceDraftRef.current = '';
+      if (++voiceRestartRef.current > 2) {
+        setError('La pregunta quedó incompleta. Pulsa Iniciar voz y repítela.');
+        stopVoice();
+        return;
+      }
+      voiceDelayRef.current = setTimeout(() => {
+        voiceDelayRef.current = null;
+        if (!voiceOnRef.current || busyRef.current) return;
+        try { engine.start(); setListening(true); }
+        catch { setError('Pulsa Iniciar voz para continuar.'); stopVoice(); }
+      }, 350);
+    };
+
     recognitionRef.current = engine;
-    voiceOnRef.current = true; setVoiceOn(true); setError(''); setTranscript('');
+    voiceOnRef.current = true;
+    voiceDraftRef.current = '';
+    voiceSessionRef.current = '';
+    voiceRestartRef.current = 0;
+    setVoiceOn(true); setError(''); setTranscript('');
     try { engine.start(); setListening(true); } catch {
       stopVoice();
       setError('No se pudo iniciar el micrófono.');
