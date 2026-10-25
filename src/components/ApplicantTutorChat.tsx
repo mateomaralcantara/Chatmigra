@@ -55,6 +55,7 @@ export default function ApplicantTutorChat() {
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [caseId, setCaseId] = useState(currentCaseId);
   const [docs, setDocs] = useState<DocRow[]>([]);
+  const [indexedIds, setIndexedIds] = useState<string[]>([]);
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [question, setQuestion] = useState('');
@@ -99,7 +100,7 @@ export default function ApplicantTutorChat() {
   }, []);
 
   const refreshCase = useCallback(async (id: string) => {
-    if (!id) { setDocs([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false); return; }
+    if (!id) { setDocs([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false); return; }
     const [files, conversation] = await Promise.all([
       supabase.from('applicant_case_documents')
         .select('id,filename,mime_type,storage_path,created_at')
@@ -112,6 +113,12 @@ export default function ApplicantTutorChat() {
     if (!mountedRef.current || activeCaseRef.current !== id) return;
     const fileRows = (files.data || []) as DocRow[];
     setDocs(fileRows);
+    // This optional query fails harmlessly until ChatMi's RAG SQL is installed.
+    const { data: readyJobs } = await supabase.from('applicant_case_index_jobs')
+      .select('document_id,status').eq('case_id',id).eq('status','ready');
+    if (mountedRef.current && activeCaseRef.current === id) {
+      setIndexedIds((readyJobs || []).map(row => String(row.document_id)));
+    }
     setSelectedDocs(previous => {
       const existing = previous.filter(p => fileRows.some(f => f.id === p));
       return (existing.length ? existing : fileRows.slice(0, 4).map(f => f.id)).slice(0, 4);
@@ -145,7 +152,7 @@ export default function ApplicantTutorChat() {
   useEffect(() => {
     activeCaseRef.current = caseId;
     setError(''); setNotice(''); setTranscript('');
-    setDocs([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false);
+    setDocs([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false);
     voiceOnRef.current = false; setVoiceOn(false);
     voiceSessionRef.current = '';
     voiceDraftRef.current = '';
@@ -206,12 +213,51 @@ export default function ApplicantTutorChat() {
       if (newlyAdded.length) setSelectedDocs(previous => [
         ...newlyAdded.slice(-4), ...previous.filter(id => !newlyAdded.includes(id)),
       ].slice(0, 4));
-      setNotice(saved + ' documento(s) guardado(s) en el expediente.');
+      setNotice(saved + ' documento(s) guardado(s). Para acelerar futuras consultas, pulsa «Preparar búsqueda rápida» una vez.');
     } catch (e) {
       setError((e instanceof Error ? e.message : 'No se pudo subir el documento.') +
         (saved ? ' Se guardaron ' + saved + ' documentos anteriores.' : ''));
       await refreshCase(caseId).catch(() => undefined);
     } finally { busyRef.current = false; setLoading(false); }
+  };
+
+
+  const prepareFastSearch = async () => {
+    const pending = docs.filter(d => selectedDocs.includes(d.id) && !indexedIds.includes(d.id));
+    if (!pending.length || loading || busyRef.current) return;
+    busyRef.current = true; setLoading(true); setError(''); setNotice('');
+    let successes = 0;
+    const failures: string[] = [];
+    try {
+      const {data:{session}}=await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Inicia sesión de nuevo.');
+      for (const [i,doc] of pending.entries()) {
+        setNotice('Preparando búsqueda rápida: documento ' + (i+1) + ' de ' + pending.length + '…');
+        try {
+          const response = await fetch('/api/applicant-index', {
+            method:'POST',
+            headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},
+            body:JSON.stringify({documentId:doc.id}),
+          });
+          const result: {indexed?:boolean;error?:string} = await response.json().catch(()=>({}));
+          if (!response.ok || !result.indexed) throw new Error(result.error || 'No se pudo indexar.');
+          successes++;
+        } catch (err) {
+          failures.push(doc.filename + ': ' + (err instanceof Error ? err.message : 'error'));
+        }
+      }
+      const {data:ready}=await supabase.from('applicant_case_index_jobs')
+        .select('document_id').eq('case_id',caseId).eq('status','ready');
+      if (activeCaseRef.current === caseId) {
+        setIndexedIds((ready||[]).map(row=>String(row.document_id)));
+        setNotice(successes + ' documento(s) preparados. Las próximas preguntas usarán fragmentos indexados cuando todos los seleccionados estén listos.');
+        if (failures.length) setError(failures.join(' | ').slice(0,900));
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Error preparando índice.');
+    } finally {
+      busyRef.current=false;setLoading(false);
+    }
   };
 
   // Short speech utterances are chained to avoid browsers truncating long answers.
@@ -571,12 +617,17 @@ export default function ApplicantTutorChat() {
         <div className="cm-tutor-documents-bar">
           <input ref={fileRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" className="cm-expediente-file-input" onChange={event => void uploadDocument(event)} disabled={!caseId || loading} aria-label="Subir documentos al expediente" />
           <button type="button" className="cm-tutor-upload" onClick={() => fileRef.current?.click()} disabled={!caseId || loading}>＋ Subir documentos</button>
+          <button type="button" className="cm-tutor-upload" onClick={() => void prepareFastSearch()}
+            disabled={!caseId || loading || selectedDocs.every(id => indexedIds.includes(id)) || !selectedDocs.length}
+            title="Prepara una vez los documentos seleccionados para responder más rápido">
+            ⚡ Preparar búsqueda rápida
+          </button>
           <details className="cm-tutor-documents">
             <summary>Documentos ({docs.length}) · {selectedDocs.length} seleccionados</summary>
             <div className="cm-tutor-document-list">
               {docs.length ? docs.map(doc => <label key={doc.id}>
                 <input type="checkbox" checked={selectedDocs.includes(doc.id)} onChange={() => toggleDoc(doc.id)} disabled={loading} />
-                <span title={doc.filename}>{doc.filename}</span>
+                <span title={doc.filename}>{doc.filename} {indexedIds.includes(doc.id) ? '✓ listo' : ''}</span>
               </label>) : <p>No hay documentos todavía.</p>}
             </div>
           </details>
