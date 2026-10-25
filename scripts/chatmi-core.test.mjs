@@ -178,6 +178,9 @@ test('expediente button uploads PDF/images and invokes tutor', () => {
   const gemini = read('src/services/geminiService.ts');
   assert.match(input, /onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}/);
   assert.match(input, /Subir expediente migratorio/);
+  assert.match(input, /className="cm-expediente-open"/);
+  assert.match(input, /Subir expediente/);
+  assert.match(input, /Tutor Migratorio/);
   assert.match(input, /accept="application\/pdf,image\/jpeg,image\/png,image\/webp"/);
   assert.match(input, /onAnalyzeDocument\(attachment, text\)/);
   assert.match(app, /const handleAnalyzeDocument = useCallback/);
