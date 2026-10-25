@@ -26,7 +26,6 @@ const StatusDisplay: React.FC<{ status: 'idle' | 'connecting' | 'listening' | 's
 };
 
 const VoiceAgentOverlay: React.FC<VoiceAgentOverlayProps> = ({ status, transcription, onClose }) => {
-  const isSpeaking = status === 'speaking';
   const isListening = status === 'listening';
   
   return (
