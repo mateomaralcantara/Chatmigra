@@ -1515,3 +1515,18 @@ input {
     font-size: 12px;
   }
 }
+
+.cm-case-tutor-new-tab {
+  display: inline-flex;
+  margin: 8px 0;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--cm-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.cm-case-tutor-new-tab:focus-visible {
+  outline: 2px solid var(--cm-accent);
+  outline-offset: 3px;
+}
