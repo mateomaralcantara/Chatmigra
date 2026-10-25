@@ -507,9 +507,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         }
         pending += decoder.decode();
         if (pending.trim()) processLine(pending.trim());
-        tokensToFinalize = observedTokens;
-        const remaining = reservationId ? await finalizeQuota(observedTokens) : null;
-        const complete = !!output.trim() && (!finishReason || finishReason === 'STOP');
+        // A missing upstream usage count must never make free streaming unbilled.
+        tokensToFinalize = observedTokens || (reservationId ? FREE_TOKENS_MAX : 0);
+        const remaining = reservationId ? await finalizeQuota(tokensToFinalize) : null;
+        // Missing STOP / MAX_TOKENS / SAFETY must not be misreported as complete.
+        const complete = !!output.trim() && finishReason === 'STOP';
         emit({ type: 'done', complete, finishReason, textLength: output.length, quotaRemaining: remaining, sources });
       } catch (streamError) {
         console.error('[gemini] Streaming terminated:', streamError);
