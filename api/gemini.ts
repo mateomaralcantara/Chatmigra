@@ -452,6 +452,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         contents,
         generationConfig: {
           maxOutputTokens: outputTokenLimit(messages, Boolean(attachment || caseProfile), effectivePlan),
+          // Gemini 3.8 Flash defaults to medium thinking; low reduces delay
+          // and prevents reasoning tokens from exhausting short answer budgets.
+          ...(TEXT_MODEL.startsWith('gemini-3')
+            ? { thinkingConfig: { thinkingLevel: 'low' } }
+            : {}),
         },
       }),
     });
