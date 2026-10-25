@@ -10,6 +10,7 @@ import { type ChatMessage, type Conversation, Plan, type User } from './types';
 import { analyzeMigrationDocument, connectToVoiceAgent, runChatStream } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 import AccountDashboard from './components/AccountDashboard';
+import ApplicantTutorWorkspace from './components/ApplicantTutorWorkspace';
 import ChatInput from './components/ChatInput';
 import ChatWindow from './components/ChatWindow';
 import ConversationHistory from './components/ConversationHistory';
@@ -17,7 +18,7 @@ import SuggestedPrompts from './components/SuggestedPrompts';
 import VoiceAgentOverlay from './components/VoiceAgentOverlay';
 import { logActivity } from './services/activityService';
 
-type View = 'chat' | 'dashboard';
+type View = 'chat' | 'dashboard' | 'tutor';
 type AgentStatus = 'idle' | 'connecting' | 'listening' | 'speaking' | 'error';
 
 interface VoiceSession {
@@ -504,7 +505,7 @@ const App: React.FC<AppProps> = ({
     const onNewChat = () => handleNewConversation();
     const onNavigate = (event: Event) => {
       const detail = (event as CustomEvent<string>).detail;
-      if (detail === 'chat' || detail === 'dashboard') {
+      if (detail === 'chat' || detail === 'dashboard' || detail === 'tutor') {
         setCurrentView(detail);
       }
     };
@@ -609,6 +610,10 @@ const App: React.FC<AppProps> = ({
             />
           )}
         </div>
+      )}
+
+      {currentView === 'tutor' && (
+        <ApplicantTutorWorkspace />
       )}
 
       {currentView === 'dashboard' && (
