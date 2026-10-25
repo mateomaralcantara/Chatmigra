@@ -283,11 +283,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
       let query = auth.supabase.from('applicant_case_documents')
         .select('id,filename,mime_type,storage_path,size_bytes')
-        .eq('case_id', requestedCaseId)
+        .eq('case_id', requestedCaseId);
+      if (ids.length) query = query.in('id', ids);
+      const { data: docs, error: docsError } = await query
         .order('created_at', { ascending: false })
         .limit(CASE_FILE_LIMIT);
-      if (ids.length) query = query.in('id', ids);
-      const { data: docs, error: docsError } = await query;
       if (docsError) {
         return res.status(503).json({ error: 'No se pudieron consultar los documentos del expediente.' });
       }
