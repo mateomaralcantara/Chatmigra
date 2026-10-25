@@ -764,3 +764,264 @@ input {
     transition-duration: .001ms !important;
   }
 }
+
+
+/* ==== CONTRASTE Y PALETAS CHATMI: diseño claro con 4 combinaciones ====
+ * Nunca heredar texto blanco del antiguo index.css en superficies claras.
+ * El selector cambia colores sin alterar consultas, sesiones ni cuotas.
+ */
+.cm-reference-shell {
+  --cm-page: #ffffff;
+  --cm-panel: #ffffff;
+  --cm-soft-panel: #f1f3f6;
+  --cm-rail-panel: #fafbfc;
+  --cm-border: #d9e0e8;
+  --cm-text: #19212c;
+  --cm-secondary: #4b5563;
+  --cm-accent: #245ab8;
+  --cm-accent-hover: #18458e;
+  --cm-accent-soft: #eaf1fd;
+  background: var(--cm-page);
+  color: var(--cm-text);
+}
+.cm-reference-shell[data-cm-theme="ocean"] {
+  --cm-page: #f2f7ff;
+  --cm-panel: #ffffff;
+  --cm-soft-panel: #e6f0ff;
+  --cm-rail-panel: #e9f2ff;
+  --cm-border: #b5cbed;
+  --cm-text: #102846;
+  --cm-secondary: #344d6e;
+  --cm-accent: #2058b8;
+  --cm-accent-hover: #153f85;
+  --cm-accent-soft: #d6e6ff;
+}
+.cm-reference-shell[data-cm-theme="mint"] {
+  --cm-page: #f1faf5;
+  --cm-panel: #ffffff;
+  --cm-soft-panel: #e1f3e9;
+  --cm-rail-panel: #e8f7ee;
+  --cm-border: #b2d7c3;
+  --cm-text: #153528;
+  --cm-secondary: #365e4d;
+  --cm-accent: #047857;
+  --cm-accent-hover: #065f46;
+  --cm-accent-soft: #d1f1df;
+}
+.cm-reference-shell[data-cm-theme="violet"] {
+  --cm-page: #faf6ff;
+  --cm-panel: #ffffff;
+  --cm-soft-panel: #f0e8ff;
+  --cm-rail-panel: #f3edff;
+  --cm-border: #d5bff2;
+  --cm-text: #2d1749;
+  --cm-secondary: #604674;
+  --cm-accent: #6d36b9;
+  --cm-accent-hover: #55218f;
+  --cm-accent-soft: #e9d9fb;
+}
+
+/* Superficies de la interfaz principal, no las tarjetas con colores propios. */
+.cm-reference-shell .cm-reference-main,
+.cm-reference-shell .cm-reference-stage,
+.cm-reference-shell .cm-app,
+.cm-reference-shell .cm-chat-view,
+.cm-reference-shell .cm-chat-transcript,
+.cm-reference-shell .cm-dashboard-view {
+  background: var(--cm-page);
+  color: var(--cm-text);
+}
+.cm-reference-shell .cm-icon-rail {
+  background: var(--cm-rail-panel);
+  border-right-color: var(--cm-border);
+}
+.cm-reference-shell .cm-reference-topbar {
+  background: var(--cm-page);
+  border-bottom-color: var(--cm-border);
+}
+.cm-reference-shell .cm-home-title,
+.cm-reference-shell .cm-history-head strong {
+  color: var(--cm-text);
+}
+.cm-reference-shell .cm-home-subtitle,
+.cm-reference-shell .cm-connection,
+.cm-reference-shell .cm-thinking {
+  color: var(--cm-secondary);
+}
+.cm-reference-shell .cm-rail-button,
+.cm-reference-shell .cm-composer-plus,
+.cm-reference-shell .cm-composer-mic {
+  color: var(--cm-accent);
+}
+.cm-reference-shell .cm-rail-button:hover,
+.cm-reference-shell .cm-composer-plus:hover,
+.cm-reference-shell .cm-composer-mic:hover {
+  background: var(--cm-accent-soft);
+}
+.cm-reference-shell .cm-mode-switch {
+  background: var(--cm-soft-panel);
+}
+.cm-reference-shell .cm-mode-switch button {
+  color: var(--cm-secondary);
+}
+.cm-reference-shell .cm-mode-switch button.is-active {
+  background: var(--cm-panel);
+  color: var(--cm-accent);
+}
+.cm-reference-shell .cm-composer {
+  background: var(--cm-panel);
+  border-color: var(--cm-border);
+}
+.cm-reference-shell .cm-composer textarea {
+  background: transparent;
+  color: var(--cm-text);
+}
+.cm-reference-shell .cm-composer textarea::placeholder {
+  color: var(--cm-secondary);
+  opacity: 1;
+}
+.cm-reference-shell .cm-model-chip {
+  color: var(--cm-secondary);
+}
+.cm-reference-shell .cm-composer-send:not(:disabled) {
+  background: var(--cm-accent);
+  color: #ffffff;
+}
+.cm-reference-shell .cm-composer-send:hover:not(:disabled) {
+  background: var(--cm-accent-hover);
+}
+.cm-reference-shell .cm-suggestion {
+  border: 1px solid var(--cm-border);
+  background: var(--cm-soft-panel);
+  color: var(--cm-text);
+}
+.cm-reference-shell .cm-suggestion-copy {
+  color: var(--cm-text);
+  font-weight: 560;
+}
+.cm-reference-shell .cm-suggestion-icon {
+  background: var(--cm-panel);
+  color: var(--cm-accent);
+}
+.cm-reference-shell .cm-suggestion-arrow {
+  color: var(--cm-accent);
+}
+.cm-reference-shell .cm-suggestion:hover {
+  background: var(--cm-accent-soft);
+  border-color: var(--cm-accent);
+}
+.cm-reference-shell .cm-suggestion:focus-visible,
+.cm-reference-shell .cm-theme-trigger:focus-visible,
+.cm-reference-shell .cm-theme-option:focus-visible {
+  outline: 3px solid var(--cm-accent);
+  outline-offset: 2px;
+}
+.cm-reference-shell .cm-chat-composer-dock {
+  background: linear-gradient(180deg, transparent, var(--cm-page) 28%, var(--cm-page));
+}
+.cm-reference-shell .cm-history-drawer,
+.cm-reference-shell .cm-history-panel {
+  background: var(--cm-panel);
+  border-color: var(--cm-border);
+  color: var(--cm-text);
+}
+.cm-reference-shell .cm-history-head span,
+.cm-reference-shell .cm-history-empty {
+  color: var(--cm-secondary);
+}
+.cm-reference-shell .cm-history-new,
+.cm-reference-shell .cm-history-item:hover,
+.cm-reference-shell .cm-history-item.is-active {
+  background: var(--cm-soft-panel);
+  color: var(--cm-text);
+}
+.cm-reference-shell .cm-history-item {
+  color: var(--cm-secondary);
+}
+.cm-reference-shell .cm-dashboard-view .min-h-screen {
+  color: var(--cm-text) !important;
+}
+
+/* Selector visible y operable, también con teclado y en pantallas pequeñas. */
+.cm-theme-picker {
+  position: relative;
+}
+.cm-theme-trigger {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 7px 11px;
+  border: 1px solid var(--cm-border);
+  border-radius: 12px;
+  background: var(--cm-panel);
+  color: var(--cm-text);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.cm-theme-trigger:hover {
+  background: var(--cm-accent-soft);
+}
+.cm-theme-menu {
+  position: absolute;
+  z-index: 120;
+  right: 0;
+  top: calc(100% + 10px);
+  width: 206px;
+  padding: 10px;
+  border: 1px solid var(--cm-border);
+  border-radius: 16px;
+  background: var(--cm-panel);
+  color: var(--cm-text);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, .16);
+}
+.cm-theme-menu-title {
+  display: block;
+  padding: 6px 8px 9px;
+  color: var(--cm-secondary);
+  font-size: 12px;
+}
+.cm-theme-option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  min-height: 39px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--cm-text);
+  text-align: left;
+  cursor: pointer;
+}
+.cm-theme-option:hover,
+.cm-theme-option.is-selected {
+  background: var(--cm-accent-soft);
+  border-color: var(--cm-border);
+}
+.cm-theme-swatch {
+  display: block;
+  flex: 0 0 auto;
+  width: 19px;
+  height: 19px;
+  border: 1px solid rgba(0,0,0,.24);
+  border-radius: 50%;
+}
+.cm-theme-check {
+  margin-left: auto;
+  color: var(--cm-accent);
+  font-weight: 800;
+}
+@media (max-width: 560px) {
+  .cm-theme-trigger {
+    padding: 7px 9px;
+  }
+  .cm-theme-trigger-label {
+    display: none;
+  }
+  .cm-top-actions {
+    gap: 5px;
+  }
+}
