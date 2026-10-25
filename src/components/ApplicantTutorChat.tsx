@@ -66,6 +66,7 @@ export default function ApplicantTutorChat() {
   const [voiceOn, setVoiceOn] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [olderAvailable, setOlderAvailable] = useState(false);
+  const [replyIncomplete, setReplyIncomplete] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<RecognitionEngine | null>(null);
@@ -213,6 +214,42 @@ export default function ApplicantTutorChat() {
     } finally { busyRef.current = false; setLoading(false); }
   };
 
+  // Short speech utterances are chained to avoid browsers truncating long answers.
+  const readAnswerAloud = (answer: string, forCase: string) => {
+    if (!window.speechSynthesis || !voiceOnRef.current) return;
+    const plain = answer.replace(/[*#_\[\]<>]/g, ' ').replace(/\s+/g, ' ').trim();
+    const words = plain.split(' ');
+    const segments: string[] = [];
+    let chunk = '';
+    for (const word of words) {
+      if (chunk.length + word.length > 160 && chunk) {
+        segments.push(chunk);
+        chunk = '';
+      }
+      chunk += (chunk ? ' ' : '') + word;
+    }
+    if (chunk) segments.push(chunk);
+    window.speechSynthesis.cancel();
+    setSpeaking(true);
+    let index = 0;
+    const next = () => {
+      if (!voiceOnRef.current || activeCaseRef.current !== forCase) { setSpeaking(false); return; }
+      if (index >= segments.length) {
+        setSpeaking(false);
+        try { recognitionRef.current?.start(); setListening(true); }
+        catch { setError('Pulsa el micrófono para continuar.'); }
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(segments[index++]);
+      utterance.lang = 'es-DO';
+      utterance.rate = 1;
+      utterance.onend = next;
+      utterance.onerror = () => { setSpeaking(false); stopVoice(); };
+      window.speechSynthesis.speak(utterance);
+    };
+    next();
+  };
+
   const askQuestion = async (rawText: string, spoken: boolean): Promise<void> => {
     const text = rawText.trim();
     if (!text || !caseId || busyRef.current) return;
@@ -220,16 +257,21 @@ export default function ApplicantTutorChat() {
       setError('Sube y selecciona al menos un documento para consultar al Tutor.');
       return;
     }
-    busyRef.current = true; setLoading(true); setError(''); setNotice('');
+    busyRef.current = true; setLoading(true); setError(''); setNotice(''); setReplyIncomplete(false);
     const queriedCase = caseId;
-    // Older one-word transcriptions and generic clarification loops must not
-    // bias the answer to a new, complete question.
-    const history = messagesRef.current.filter(m => (
+    const previous = [...messagesRef.current];
+    // Keep recent relevant context without allowing old one-word transcriptions
+    // and generic model replies to poison the next full response.
+    const history = previous.filter(m => (
       m.role === 'user'
         ? m.content.trim().split(/\s+/).filter(Boolean).length >= 3
         : !/^Por favor,? indique qu[eé] dato/i.test(m.content.trim())
     )).slice(-10).map(m => ({ role: m.role, content: m.content }));
-    setMessages(previous => [...previous, { role: 'user', content: text }]);
+    const show = (answer: string) => {
+      if (!mountedRef.current || activeCaseRef.current !== queriedCase) return;
+      setMessages([...previous, { role: 'user', content: text }, { role: 'model', content: answer }]);
+    };
+    show('');
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error('Tu sesión expiró. Inicia sesión de nuevo.');
@@ -237,40 +279,76 @@ export default function ApplicantTutorChat() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
         body: JSON.stringify({
-          caseId: queriedCase, documentIds: selectedDocs,
+          caseId: queriedCase, documentIds: selectedDocs, stream: true,
           messages: [...history, { role: 'user', content: text }],
         }),
       });
-      const data: { text?: string; error?: string } = await result.json().catch(() => ({}));
-      if (!result.ok || !data.text) throw new Error(data.error || 'El Tutor no pudo responder.');
-      const responseText = data.text;
+      if (!result.ok) {
+        const failure: { error?: string } = await result.json().catch(() => ({}));
+        throw new Error(failure.error || 'El Tutor no pudo responder (HTTP ' + result.status + ').');
+      }
+      let responseText = '';
+      let complete = true;
+      if (result.headers.get('content-type')?.includes('application/x-ndjson') && result.body) {
+        const reader = result.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let sawDone = false;
+        const processLine = (rawLine: string) => {
+          if (!rawLine.trim()) return;
+          let frame: { type?: string; text?: string; error?: string; complete?: boolean };
+          try { frame = JSON.parse(rawLine); }
+          catch { throw new Error('La transmisión devolvió un mensaje inválido.'); }
+          if (frame.type === 'delta' && typeof frame.text === 'string') {
+            responseText += frame.text;
+            show(responseText);
+          } else if (frame.type === 'done') {
+            sawDone = true;
+            complete = frame.complete === true;
+          } else if (frame.type === 'error') {
+            throw new Error(frame.error || 'Se interrumpió la respuesta.');
+          }
+        };
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let split: number;
+            while ((split = buffer.indexOf('\n')) !== -1) {
+              const line = buffer.slice(0, split).trim();
+              buffer = buffer.slice(split + 1);
+              processLine(line);
+            }
+          }
+          buffer += decoder.decode();
+          if (buffer.trim()) processLine(buffer.trim());
+          if (!sawDone) throw new Error('Se cerró la conexión antes de terminar la respuesta.');
+        } finally {
+          await reader.cancel().catch(() => undefined);
+        }
+      } else {
+        const data: { text?: string; complete?: boolean } = await result.json().catch(() => ({}));
+        responseText = data.text || '';
+        complete = data.complete !== false;
+        show(responseText);
+      }
+      if (!responseText.trim()) throw new Error('Gemini no devolvió una respuesta legible.');
       const user = await loggedInUser();
       const { error: saveError } = await supabase.from('applicant_case_messages').insert([
         { case_id: queriedCase, created_by: user.id, role: 'user', content: text.slice(0, 15000) },
         { case_id: queriedCase, created_by: user.id, role: 'model', content: responseText.slice(0, 15000) },
       ]);
-      if (saveError) throw new Error('El Tutor respondió pero no pudo guardar el historial. Intenta nuevamente.');
+      if (saveError) throw new Error('La respuesta se mostró pero no pudo guardarse en el historial.');
       if (!mountedRef.current || activeCaseRef.current !== queriedCase) return;
       setQuestion('');
-      setMessages(previous => [...previous, { role: 'model', content: responseText }]);
-      if (spoken && voiceOnRef.current && window.speechSynthesis) {
-        setSpeaking(true);
-        const speech = new SpeechSynthesisUtterance(responseText.replace(/[*#_\[\]]/g, ' '));
-        speech.lang = 'es-DO';
-        speech.rate = 1;
-        speech.onend = () => {
-          setSpeaking(false);
-          if (voiceOnRef.current && activeCaseRef.current === queriedCase) {
-            try { recognitionRef.current?.start(); setListening(true); } catch { setError('Pulsa el micrófono para continuar.'); }
-          }
-        };
-        speech.onerror = () => { setSpeaking(false); voiceOnRef.current = false; setVoiceOn(false); };
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(speech);
-      }
+      setReplyIncomplete(!complete);
+      if (!complete) setNotice('Gemini alcanzó su límite de generación. Puedes pulsar «Continuar respuesta» para completar el análisis.');
+      if (spoken && voiceOnRef.current) readAnswerAloud(responseText, queriedCase);
     } catch (e) {
       if (mountedRef.current && activeCaseRef.current === queriedCase) {
-        setMessages(previous => previous.filter((_, index) => index < previous.length - 1));
+        // Uncommitted partial output is not presented as a saved, complete answer.
+        setMessages(previous);
         setError(e instanceof Error ? e.message : 'No se pudo consultar el documento.');
       }
       if (spoken) { voiceOnRef.current = false; setVoiceOn(false); }
