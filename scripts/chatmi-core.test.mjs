@@ -170,3 +170,37 @@ test('profile upload appears in both avatar buttons with authenticated storage',
   assert.match(sql, /storage\.foldername\(name\)\)\[1\] = \(select auth\.uid\(\)\)::text/);
   assert.doesNotMatch(sql, /on storage\.objects\s+for (?:all|insert)\s+using\s*\(\s*true\s*\)/i);
 });
+
+
+test('expediente button uploads PDF/images and invokes tutor', () => {
+  const input = read('src/components/ChatInput.tsx');
+  const app = read('src/App.tsx');
+  const gemini = read('src/services/geminiService.ts');
+  assert.match(input, /onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}/);
+  assert.match(input, /Subir expediente migratorio/);
+  assert.match(input, /accept="application\/pdf,image\/jpeg,image\/png,image\/webp"/);
+  assert.match(input, /onAnalyzeDocument\(attachment, text\)/);
+  assert.match(app, /const handleAnalyzeDocument = useCallback/);
+  assert.match(app, /onAnalyzeDocument=\{handleAnalyzeDocument\}/);
+  assert.match(app, /analyzeMigrationDocument\(file, question\)/);
+  assert.doesNotMatch(app.slice(app.indexOf('const handleAnalyzeDocument'), app.indexOf('const stopVoiceAgent')), /persistUserMessage/);
+  assert.match(gemini, /fetch\('\/api\/gemini'/);
+  assert.match(gemini, /attachment: \{/);
+});
+
+test('tutor validates inline document and uses server-only Gemini key', () => {
+  const api = read('api/gemini.ts');
+  assert.match(api, /MAX_EXPEDIENTE_BYTES = 2 \* 1024 \* 1024/);
+  assert.match(api, /function validateAttachment\(input: unknown\)/);
+  assert.match(api, /bytes\.toString\('base64'\) !== data/);
+  assert.match(api, /validPdf/);
+  assert.match(api, /validJpeg/);
+  assert.match(api, /validPng/);
+  assert.match(api, /validWebp/);
+  assert.match(api, /inlineData: \{ mimeType: attachment\.mimeType, data: attachment\.data \}/);
+  assert.match(api, /Tutor Migratorio especializado/);
+  assert.match(api, /if \(hasExpediente\) return FREE_TOKENS_MAX/);
+  assert.match(api, /'x-goog-api-key': apiKey/);
+  assert.doesNotMatch(api, /:generateContent\?key=/);
+  assert.match(api, /requireAuthenticatedUser\(req\)/);
+});
