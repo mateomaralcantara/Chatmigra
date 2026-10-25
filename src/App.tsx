@@ -63,7 +63,6 @@ const App: React.FC<AppProps> = ({
   user,
   plan,
   onLogout,
-  initialView,
 }) => {
   const [currentPlan, setCurrentPlan] = useState<Plan>(plan);
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
