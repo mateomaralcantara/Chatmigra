@@ -117,6 +117,12 @@ export default function ApplicantTutorChat() {
   }, []);
 
   useEffect(() => {
+    const openVoice = () => setMode('voice');
+    window.addEventListener('chatmi:tutor-voice', openVoice);
+    return () => window.removeEventListener('chatmi:tutor-voice', openVoice);
+  }, []);
+
+  useEffect(() => {
     mountedRef.current = true;
     void refreshCases().catch(e => setError(e instanceof Error ? e.message : 'No se pudieron cargar los expedientes.'));
     const pop = () => setCaseId(currentCaseId());
