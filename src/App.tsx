@@ -555,7 +555,7 @@ const App: React.FC<AppProps> = ({
   );
 
   return (
-    <div className="cm-app">
+    <div className={currentView === 'tutor' ? 'cm-app cm-app--tutor' : 'cm-app'}>
       {currentView === 'chat' && (
         <div className="cm-chat-view">
           {isHistoryOpen && (
