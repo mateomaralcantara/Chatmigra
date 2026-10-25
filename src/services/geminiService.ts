@@ -154,11 +154,12 @@ export async function analyzeMigrationDocument(
     reader.readAsDataURL(file);
   });
 
+  const headers = await authHeaders();
   let response: Response;
   try {
     response = await fetch('/api/gemini', {
       method: 'POST',
-      headers: await authHeaders(),
+      headers,
       body: JSON.stringify({
         messages: [{
           role: 'user',
