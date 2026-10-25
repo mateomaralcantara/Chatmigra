@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import ProfilePhotoMenu from './ProfilePhotoMenu';
 
 type PaletteId = 'classic' | 'ocean' | 'mint' | 'violet';
 
@@ -100,15 +101,7 @@ export default function PremiumShell({ children }: PremiumShellProps) {
 
         <div className="cm-rail-spacer" />
 
-        <button
-          type="button"
-          className="cm-rail-profile"
-          title="Mi cuenta"
-          aria-label="Mi cuenta"
-          onClick={() => emit('chatmi:navigate', 'dashboard')}
-        >
-          M
-        </button>
+        <ProfilePhotoMenu position="rail" onAccount={() => emit('chatmi:navigate', 'dashboard')} />
       </aside>
 
       <section className="cm-reference-main">
@@ -176,14 +169,7 @@ export default function PremiumShell({ children }: PremiumShellProps) {
               <span className="cm-connection-dot" />
               IA
             </span>
-            <button
-              type="button"
-              className="cm-top-profile"
-              aria-label="Abrir mi cuenta"
-              onClick={() => emit('chatmi:navigate', 'dashboard')}
-            >
-              M
-            </button>
+            <ProfilePhotoMenu position="top" onAccount={() => emit('chatmi:navigate', 'dashboard')} />
           </div>
         </header>
 
