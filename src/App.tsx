@@ -10,7 +10,7 @@ import { type ChatMessage, type Conversation, Plan, type User } from './types';
 import { analyzeMigrationDocument, connectToVoiceAgent, runChatStream } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 import AccountDashboard from './components/AccountDashboard';
-import ApplicantTutorWorkspace from './components/ApplicantTutorWorkspace';
+import ApplicantTutorChat from './components/ApplicantTutorChat';
 import ChatInput from './components/ChatInput';
 import ChatWindow from './components/ChatWindow';
 import ConversationHistory from './components/ConversationHistory';
@@ -634,7 +634,7 @@ const App: React.FC<AppProps> = ({
       )}
 
       {currentView === 'tutor' && (
-        <ApplicantTutorWorkspace />
+        <ApplicantTutorChat />
       )}
 
       {currentView === 'dashboard' && (
