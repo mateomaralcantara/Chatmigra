@@ -237,11 +237,12 @@ const App: React.FC<AppProps> = ({
             return { conversationId: null, authUserId: authUser.id };
           }
 
-          conversationId = String(data.id);
-          setCurrentConversationId(conversationId);
+          const newConversationId = String(data.id);
+          conversationId = newConversationId;
+          setCurrentConversationId(newConversationId);
           setConversations((previous) => [
             {
-              id: conversationId,
+              id: newConversationId,
               created_at: String(data.created_at),
               title: data.title ?? title,
             },
