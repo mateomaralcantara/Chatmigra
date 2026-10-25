@@ -201,7 +201,7 @@ test('tutor validates inline document and uses server-only Gemini key', () => {
   assert.match(api, /validPng/);
   assert.match(api, /validWebp/);
   assert.match(api, /inlineData: \{ mimeType: attachment\.mimeType, data: attachment\.data \}/);
-  assert.match(api, /Tutor Migratorio especializado/);
+  assert.match(api, /Tutor Migratorio de ChatMi/);
   assert.match(api, /if \(hasExpediente\) return FREE_TOKENS_MAX/);
   assert.match(api, /'x-goog-api-key': apiKey/);
   assert.doesNotMatch(api, /:generateContent\?key=/);
