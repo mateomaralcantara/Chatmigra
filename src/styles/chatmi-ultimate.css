@@ -1468,3 +1468,50 @@ input {
 .cm-case-tutor-success{background:#dcfce7;color:#14532d!important}
 .cm-mode-switch{min-width:fit-content}
 @media(max-width:760px){.cm-case-tutor-grid{grid-template-columns:1fr}.cm-case-tutor{padding:14px 10px}.cm-case-tutor-sidebar{grid-template-columns:1fr}.cm-mode-switch{gap:2px}.cm-mode-switch button{padding-inline:12px}}
+
+
+/* Dedicated, deep-linked Tutor Personal workspace and safe case dismissal. */
+.cm-case-tutor-head .cm-case-tutor-back {
+  margin: 0 0 18px;
+  padding: 8px 13px;
+  border: 1px solid var(--cm-border);
+  border-radius: 11px;
+  background: var(--cm-panel);
+  color: var(--cm-accent);
+  font-weight: 700;
+  cursor: pointer;
+}
+.cm-case-tutor-back:hover {
+  background: var(--cm-accent-soft);
+}
+.cm-case-tutor-danger {
+  margin-top: 8px;
+  border-color: #fecaca;
+}
+.cm-case-tutor-danger h2 {
+  font-size: 19px;
+}
+.cm-case-tutor-danger button {
+  background: #fff1f2!important;
+  color: #9f1239!important;
+  border-color: #fda4af!important;
+}
+.cm-case-tutor-danger button:hover:not(:disabled) {
+  background: #ffe4e6!important;
+}
+.cm-case-tutor-danger p {
+  font-size: 13px;
+}
+.cm-reference-shell .cm-mode-switch {
+  max-width: calc(100vw - 170px);
+  overflow-x: auto;
+}
+.cm-reference-shell .cm-mode-switch button {
+  white-space: nowrap;
+}
+@media (max-width: 620px) {
+  .cm-reference-shell .cm-mode-switch button {
+    padding-inline: 7px;
+    font-size: 12px;
+  }
+}
