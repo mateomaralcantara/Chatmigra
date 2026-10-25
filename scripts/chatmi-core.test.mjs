@@ -69,3 +69,17 @@ test('quota hardening revokes user-facing RPC access and uses idempotent reserva
   assert.match(sql, /grant execute on function public\.chatmi_finalize_tokens_server\(uuid, integer\)/);
   assert.doesNotMatch(sql, /drop table/i);
 });
+
+
+test('Gemini server routes cannot fall back to publicly prefixed secrets', () => {
+  for (const path of ['api/gemini.ts', 'api/gemini-ephemeral-token.ts']) {
+    const code = read(path);
+    assert.match(code, /process\.env\.GEMINI_API_KEY/);
+    assert.doesNotMatch(code, /process\.env\.VITE_GEMINI_API_KEY/);
+  }
+});
+
+test('production build does not publish source maps', () => {
+  const viteConfig = read('vite.config.ts');
+  assert.match(viteConfig, /sourcemap:\s*false/);
+});
