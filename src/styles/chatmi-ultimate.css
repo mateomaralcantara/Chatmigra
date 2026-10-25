@@ -1530,3 +1530,34 @@ input {
   outline: 2px solid var(--cm-accent);
   outline-offset: 3px;
 }
+
+/* Tutor is a long workspace inside a fixed-height app shell. Scroll its own viewport. */
+.cm-app--tutor {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+.cm-app--tutor .cm-case-tutor {
+  min-height: 100%;
+  height: auto;
+  padding-bottom: max(40px, env(safe-area-inset-bottom));
+}
+.cm-case-tutor-quicknav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.cm-case-tutor-quicknav a {
+  color: var(--cm-accent);
+  border: 1px solid var(--cm-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-decoration: none;
+  font-weight: 650;
+}
+.cm-app--tutor #tutor-conversacion,
+.cm-app--tutor #tutor-documentos,
+.cm-app--tutor #tutor-seguimiento { scroll-margin-top: 20px; }
