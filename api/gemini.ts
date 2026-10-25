@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  getAdminSupabase,
   requireAuthenticatedUser,
   type RequestLike,
 } from '../server/supabase';
@@ -25,7 +26,7 @@ interface ApiResponse {
 interface QuotaReservation {
   ok?: boolean;
   remaining?: number;
-  reserved?: number;
+  reservation_id?: string;
 }
 
 const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash';
@@ -143,8 +144,22 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     });
   }
 
-  let reservedTokens = 0;
+  let quotaAdmin: SupabaseClient | null = null;
+  let reservationId: string | null = null;
   let quotaEnforced = false;
+
+  // Users cannot call quota RPCs. The service key is server-only.
+  const finalizeQuota = async (actual: number): Promise<number | null> => {
+    if (!quotaAdmin || !reservationId) return null;
+    const { data, error } = await quotaAdmin.rpc('chatmi_finalize_tokens_server', {
+      p_reservation_id: reservationId,
+      p_actual: Math.max(0, Math.floor(actual)),
+    });
+    const result = data as { ok?: boolean; remaining?: number } | null;
+    if (error || !result?.ok) throw new Error('QUOTA_FINALIZATION_FAILED');
+    reservationId = null;
+    return typeof result.remaining === 'number' ? result.remaining : null;
+  };
 
   try {
     const body = readBody(req.body);
@@ -161,30 +176,42 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     );
 
     if (effectivePlan === 'free') {
-      reservedTokens = estimateReservation(messages);
-
-      const { data, error } = await auth.supabase.rpc('chatmi_reserve_tokens', {
-        p_tokens: reservedTokens,
+      quotaAdmin = getAdminSupabase();
+      if (!quotaAdmin) return res.status(503).json({
+        error: 'El servicio de cuotas no está configurado.',
+        code: 'QUOTA_SERVICE_UNAVAILABLE',
       });
 
-      if (!error) {
-        quotaEnforced = true;
-        const reservation = (data || {}) as QuotaReservation;
+      const { data, error } = await quotaAdmin.rpc('chatmi_reserve_tokens_server', {
+        p_user_id: auth.user.id,
+        p_tokens: estimateReservation(messages),
+      });
 
-        if (!reservation.ok) {
-          return res.status(429).json({
-            error: 'Has consumido tus 3,000 tokens gratuitos.',
-            code: 'FREE_QUOTA_EXHAUSTED',
-            remaining: reservation.remaining ?? 0,
-          });
-        }
-      } else {
-        console.warn(
-          '[gemini] Quota RPC unavailable; request allowed in degraded mode:',
-          error.message,
-        );
-        reservedTokens = 0;
+      if (error) {
+        console.error('[gemini] Server quota reservation failed:', error);
+        return res.status(503).json({
+          error: 'No fue posible comprobar tu cuota. Intenta de nuevo.',
+          code: 'QUOTA_SERVICE_UNAVAILABLE',
+        });
       }
+
+      const reservation = (data || {}) as QuotaReservation;
+      if (!reservation.ok) return res.status(429).json({
+        error: 'Has consumido tus 3,000 tokens gratuitos.',
+        code: 'FREE_QUOTA_EXHAUSTED',
+        remaining: reservation.remaining ?? 0,
+      });
+
+      if (typeof reservation.reservation_id !== 'string' || !reservation.reservation_id) {
+        console.error('[gemini] Reservation identifier missing');
+        return res.status(503).json({
+          error: 'El servicio de cuotas devolvió una respuesta inválida.',
+          code: 'QUOTA_SERVICE_UNAVAILABLE',
+        });
+      }
+
+      reservationId = reservation.reservation_id;
+      quotaEnforced = true;
     }
 
     const contents = messages.map((message) => ({
@@ -223,12 +250,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     if (!googleResponse.ok) {
-      if (quotaEnforced && reservedTokens > 0) {
-        await auth.supabase.rpc('chatmi_finalize_tokens', {
-          p_reserved: reservedTokens,
-          p_actual: 0,
-        });
-      }
+      if (reservationId) await finalizeQuota(0);
 
       console.error('[gemini] Google API error', googleResponse.status, data);
 
@@ -246,12 +268,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       : '';
 
     if (!text) {
-      if (quotaEnforced && reservedTokens > 0) {
-        await auth.supabase.rpc('chatmi_finalize_tokens', {
-          p_reserved: reservedTokens,
-          p_actual: 0,
-        });
-      }
+      if (reservationId) await finalizeQuota(0);
 
       return res.status(502).json({
         error: 'Gemini returned an empty response',
@@ -260,24 +277,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const actualTokens = Number(data?.usageMetadata?.totalTokenCount || 0);
-    let remaining: number | null = null;
-
-    if (quotaEnforced && reservedTokens > 0) {
-      const { data: finalized, error: finalizeError } = await auth.supabase.rpc(
-        'chatmi_finalize_tokens',
-        {
-          p_reserved: reservedTokens,
-          p_actual: Math.max(0, actualTokens),
-        },
-      );
-
-      if (finalizeError) {
-        console.error('[gemini] quota finalize failed', finalizeError);
-      } else if (finalized && typeof finalized === 'object') {
-        remaining = Number((finalized as { remaining?: number }).remaining ?? 0);
-      }
-    }
-
+    const remaining = reservationId
+      ? await finalizeQuota(Number.isFinite(actualTokens) ? actualTokens : 0)
+      : null;
     return res.status(200).json({
       text,
       model: TEXT_MODEL,
@@ -289,14 +291,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       },
     });
   } catch (error) {
-    if (quotaEnforced && reservedTokens > 0) {
-      try {
-        await auth.supabase.rpc('chatmi_finalize_tokens', {
-          p_reserved: reservedTokens,
-          p_actual: 0,
-        });
-      } catch {
-        // Best effort refund.
+    if (reservationId) {
+      try { await finalizeQuota(0); }
+      catch (refundError) {
+        console.error('[gemini] Could not release quota reservation:', refundError);
       }
     }
 
