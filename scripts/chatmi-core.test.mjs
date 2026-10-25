@@ -264,23 +264,27 @@ test('tutor answers direct questions using only requested facts, not long explan
 });
 
 
-test('applicant tutor is a dedicated mode with private persistent cases', () => {
+test('applicant tutor is a dedicated chat and voice mode with private persistent cases', () => {
   const shell = read('src/ui/PremiumShell.tsx');
   const app = read('src/App.tsx');
-  const workspace = read('src/components/ApplicantTutorWorkspace.tsx');
+  const tutor = read('src/components/ApplicantTutorChat.tsx');
   const sql = read('supabase/setup/chatmi-applicant-tutor.sql');
 
   assert.match(shell, /emit\('chatmi:navigate', 'tutor'\)/);
   assert.match(shell, /activeMode === 'tutor'/);
   assert.match(app, /type View = 'chat' \| 'dashboard' \| 'tutor'/);
-  assert.match(app, /<ApplicantTutorWorkspace \/>/);
-  assert.match(workspace, /applicant_cases/);
-  assert.match(workspace, /applicant_case_documents/);
-  assert.match(workspace, /applicant_case_messages/);
-  assert.match(workspace, /Subir documentos/);
-  assert.match(workspace, /inviteCode/);
-  assert.match(workspace, /caseId: currentId/);
-  assert.match(workspace, /No cargues datos personales sin autorización/);
+  assert.match(app, /<ApplicantTutorChat \/>/);
+  assert.match(app, /chatmi:tutor-voice/);
+  assert.match(tutor, /applicant_cases/);
+  assert.match(tutor, /applicant_case_documents/);
+  assert.match(tutor, /applicant_case_messages/);
+  assert.match(tutor, /Subir documentos/);
+  assert.match(tutor, /caseId: queriedCase/);
+  assert.match(tutor, /mode === 'chat'/);
+  assert.match(tutor, /mode === 'voice'/);
+  assert.match(tutor, /recognitionConstructor/);
+  assert.match(tutor, /speechSynthesis/);
+  assert.match(tutor, /BUCKET = 'chatmi-applicant-cases'/);
   assert.match(sql, /'chatmi-applicant-cases','chatmi-applicant-cases',false/);
   assert.match(sql, /create policy "ac_cases_read_access"/);
   assert.match(sql, /for select to authenticated/);
@@ -307,21 +311,21 @@ test('tutor only reads documents after checking case access and limits files', (
 });
 
 
-test('tutor workspace has deep links and persists case navigation across reload', () => {
+test('tutor chat deep links and persistent case navigation survive reloads', () => {
   const app = read('src/App.tsx');
   const shell = read('src/ui/PremiumShell.tsx');
-  const workspace = read('src/components/ApplicantTutorWorkspace.tsx');
+  const tutor = read('src/components/ApplicantTutorChat.tsx');
   const vercel = JSON.parse(read('vercel.json'));
   assert.match(app, /viewFromPath\(window\.location\.pathname\)/);
   assert.match(app, /window\.history\.pushState/);
   assert.match(app, /window\.addEventListener\('popstate'/);
   assert.match(shell, /activeMode === 'tutor'/);
-  assert.match(workspace, /caseIdFromLocation\(\)/);
-  assert.match(workspace, /openCaseRoute\(item\.id\)/);
-  assert.match(workspace, /'\/tutor\/' \+ encodeURIComponent\(id\)/);
-  assert.match(workspace, /Cargar mensajes anteriores/);
-  assert.match(workspace, /\.lt\('created_at', before\)/);
-  assert.match(workspace, /Expediente creado y guardado/);
+  assert.match(tutor, /useState\(currentCaseId\)/);
+  assert.match(tutor, /routeToCase\(event\.target\.value\)/);
+  assert.match(tutor, /'\/tutor\/' \+ encodeURIComponent\(id\)/);
+  assert.match(tutor, /Cargar mensajes anteriores/);
+  assert.match(tutor, /\.lt\('created_at',before\)/);
+  assert.match(tutor, /Expediente privado creado/);
   assert.ok(vercel.rewrites.some((entry) => entry.source === '/tutor'));
   assert.ok(vercel.rewrites.some((entry) => entry.source === '/tutor/:path*'));
   assert.ok(vercel.rewrites.every((entry) => !entry.source.startsWith('/api')));
