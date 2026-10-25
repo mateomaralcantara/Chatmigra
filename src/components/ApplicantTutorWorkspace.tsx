@@ -32,6 +32,16 @@ const MIME_EXTENSION: Record<string, string> = {
   'image/webp': 'webp',
 };
 const CATEGORIES: Category[] = ['perfil', 'carta', 'foto', 'formulario', 'otro'];
+const CASE_ROUTE = /^\/tutor\/([0-9a-f]{8}-[0-9a-f-]{27,})$/i;
+
+function caseIdFromLocation(): string {
+  return CASE_ROUTE.exec(window.location.pathname)?.[1] || '';
+}
+
+function openCaseRoute(id: string) {
+  const path = id ? '/tutor/' + encodeURIComponent(id) : '/tutor';
+  if (window.location.pathname !== path) window.history.pushState({}, '', path);
+}
 
 async function userId(): Promise<string> {
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -58,7 +68,7 @@ async function tutorApi(body: Record<string, unknown>) {
 
 export default function ApplicantTutorWorkspace() {
   const [cases, setCases] = useState<Case[]>([]);
-  const [selectedId, setSelectedId] = useState('');
+  const [selectedId, setSelectedId] = useState<string>(caseIdFromLocation);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [messages, setMessages] = useState<TutorMessage[]>([]);
@@ -94,8 +104,7 @@ export default function ApplicantTutorWorkspace() {
     setCases(found);
     setSelectedId((current) => {
       const wanted = preferId || current;
-      return found.some((item) => item.id === wanted)
-        ? wanted : (found[0]?.id || '');
+      return found.some((item) => item.id === wanted) ? wanted : '';
     });
   }, []);
 
@@ -131,6 +140,12 @@ export default function ApplicantTutorWorkspace() {
   }, [refreshCases]);
 
   useEffect(() => {
+    const onPopState = () => setSelectedId(caseIdFromLocation());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
     setError('');
     void refreshCaseData(selectedId).catch((caught) => setError(caught.message));
   }, [selectedId, refreshCaseData]);
@@ -158,7 +173,8 @@ export default function ApplicantTutorWorkspace() {
       if (insertError || !data) throw new Error('No se pudo crear el expediente privado.');
       setName(''); setNationality(''); setDestination(''); setVisaType('');
       await refreshCases(data.id);
-      setStatus('Expediente creado.');
+      openCaseRoute(data.id);
+      setStatus('Expediente creado y guardado.');
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Error de creación.'); }
     finally { setBusy(false); }
   };
@@ -279,9 +295,9 @@ export default function ApplicantTutorWorkspace() {
         { case_id: currentId, created_by: id, role: 'model', content: result.text.slice(0, 15000) },
       ];
       const { error: historyError } = await supabase.from('applicant_case_messages').insert(rows);
+      if (historyError) throw new Error('La respuesta no pudo guardarse en el expediente. Intenta nuevamente.');
       setQuestion('');
       setMessages((current) => [...current, { role: 'model', content: result.text || '' }]);
-      if (historyError) setStatus('Respuesta recibida; no fue posible guardar el historial.');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Error al consultar el Tutor.');
       setMessages(messages);
@@ -309,16 +325,54 @@ export default function ApplicantTutorWorkspace() {
       const result = await tutorApi({ action: 'redeem', code: redeemCode.trim() });
       setRedeemCode('');
       await refreshCases(result.caseId);
+      if (result.caseId) openCaseRoute(result.caseId);
       setStatus('Ya tienes acceso al expediente compartido.');
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Código no aceptado.'); }
     finally { setBusy(false); }
+  };
+
+  const removeOrLeaveCase = async () => {
+    if (!selectedCase || busy) return;
+    const isOwner = selectedCase.owner_id === myId;
+    const confirmation = isOwner
+      ? window.prompt(
+          'Eliminarás definitivamente el expediente, sus documentos, mensajes e invitaciones. Escribe exactamente el nombre del aplicante:',
+          '',
+        )
+      : window.confirm('¿Salir de este expediente compartido? No se eliminarán los documentos.');
+    if (isOwner ? confirmation !== selectedCase.applicant_name : !confirmation) return;
+    setBusy(true);
+    setError('');
+    setStatus('');
+    try {
+      await tutorApi(isOwner
+        ? { action: 'delete_case', caseId: selectedCase.id, confirmName: confirmation }
+        : { action: 'leave', caseId: selectedCase.id });
+      setSelectedId('');
+      openCaseRoute('');
+      setDocuments([]);
+      setMessages([]);
+      setSelectedDocs([]);
+      await refreshCases();
+      setStatus(isOwner
+        ? 'Expediente eliminado. Su eliminación de copias de seguridad depende de la política de retención.'
+        : 'Has salido del expediente compartido.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No se completó la operación.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <section className="cm-case-tutor" aria-label="Tutor Personal del Aplicante">
       <div className="cm-case-tutor-head">
         <h1>Tutor Personal del Aplicante</h1>
-        <p>Expedientes privados · Perfil, cartas, fotografías y formularios · Tutoría basada en cada caso</p>
+        <p>Un espacio independiente por aplicante. Perfil, cartas, fotografías, formularios y conversaciones guardados en Supabase.</p>
+        <button className="cm-case-tutor-back" type="button" onClick={() => {
+          setSelectedId('');
+          openCaseRoute('');
+        }}>← Todos los expedientes</button>
       </div>
       {error && <p className="cm-case-tutor-error" role="alert">{error}</p>}
       {status && <p className="cm-case-tutor-success" role="status">{status}</p>}
@@ -329,7 +383,7 @@ export default function ApplicantTutorWorkspace() {
             {cases.map((item) => (
               <button key={item.id} type="button"
                 className={item.id === selectedId ? 'is-selected' : ''}
-                onClick={() => { setSelectedId(item.id); setInviteCode(''); }}
+                onClick={() => { setSelectedId(item.id); openCaseRoute(item.id); setInviteCode(''); }}
               >{item.applicant_name}</button>
             ))}
             {!cases.length && <p>No hay expedientes todavía.</p>}
@@ -444,6 +498,15 @@ export default function ApplicantTutorWorkspace() {
                   aria-label="Pregunta al Tutor Personal del Aplicante" />
                 <button type="submit" disabled={busy || !question.trim()}>{busy ? 'Consultando…' : 'Preguntar al Tutor'}</button>
               </form>
+            </div>
+            <div className="cm-case-tutor-panel cm-case-tutor-danger">
+              <h2>Gestión y privacidad del expediente</h2>
+              <p>El expediente y su historial permanecen guardados al cerrar sesión. Cancelar una suscripción no elimina automáticamente estos datos.</p>
+              <button type="button" disabled={busy} onClick={() => void removeOrLeaveCase()}>
+                {selectedCase.owner_id === myId
+                  ? 'Eliminar expediente y documentos definitivamente'
+                  : 'Salir de este expediente compartido'}
+              </button>
             </div>
           </div>
         ) : (
