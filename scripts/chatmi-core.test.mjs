@@ -251,6 +251,31 @@ test('tutor shows HTTP failures including gateway 413 instead of silent generic 
 });
 
 
+test('case tutor answers the last specific question using the correct applicant profile', () => {
+  const api = read('api/gemini.ts');
+  assert.match(api, /if \(hasCase\)/);
+  assert.match(api, /ÚLTIMA pregunta del usuario/);
+  assert.match(api, /El campo Categoría corresponde al tipo de visa/);
+  assert.match(api, /¿Qué tipo de visa estoy solicitando/);
+  assert.match(api, /No respondas «Por favor, indique qué dato desea consultar»/);
+  assert.match(api, /No consta en el expediente/);
+  assert.match(api, /Nunca inventes información migratoria/);
+});
+
+test('case voice collects a full utterance and does not submit a single word', () => {
+  const tutor = read('src/components/ApplicantTutorChat.tsx');
+  assert.match(tutor, /engine\.continuous = true/);
+  assert.match(tutor, /engine\.interimResults = true/);
+  assert.match(tutor, /const submitRecognizedQuestion/);
+  assert.match(tutor, /split\(\/\\s\+\/\)\.filter\(Boolean\)\.length < 3/);
+  assert.match(tutor, /scheduleQuestion\(1700\)/);
+  assert.match(tutor, /voiceSessionRef\.current = phrase/);
+  assert.match(tutor, /engine\.stop\(\)/);
+  assert.match(tutor, /void askQuestion\(complete, true\)/);
+  assert.match(tutor, /No detecté una pregunta completa/);
+  assert.doesNotMatch(tutor, /void askQuestion\(text, true\)/);
+});
+
 test('tutor answers direct questions using only requested facts, not long explanations', () => {
   const api = read('api/gemini.ts');
   assert.match(api, /responde EXCLUSIVAMENTE con el valor extraído del documento, en una sola línea/);
