@@ -305,3 +305,42 @@ test('tutor only reads documents after checking case access and limits files', (
   assert.match(invitation, /createHash\('sha256'\)/);
   assert.match(invitation, /email_confirmed_at/);
 });
+
+
+test('tutor workspace has deep links and persists case navigation across reload', () => {
+  const app = read('src/App.tsx');
+  const shell = read('src/ui/PremiumShell.tsx');
+  const workspace = read('src/components/ApplicantTutorWorkspace.tsx');
+  const vercel = JSON.parse(read('vercel.json'));
+  assert.match(app, /viewFromPath\(window\.location\.pathname\)/);
+  assert.match(app, /window\.history\.pushState/);
+  assert.match(app, /window\.addEventListener\('popstate'/);
+  assert.match(shell, /activeMode === 'tutor'/);
+  assert.match(workspace, /caseIdFromLocation\(\)/);
+  assert.match(workspace, /openCaseRoute\(item\.id\)/);
+  assert.match(workspace, /'\/tutor\/' \+ encodeURIComponent\(id\)/);
+  assert.match(workspace, /Cargar mensajes anteriores/);
+  assert.match(workspace, /\.lt\('created_at', before\)/);
+  assert.match(workspace, /Expediente creado y guardado/);
+  assert.ok(vercel.rewrites.some((entry) => entry.source === '/tutor'));
+  assert.ok(vercel.rewrites.some((entry) => entry.source === '/tutor/:path*'));
+  assert.ok(vercel.rewrites.every((entry) => !entry.source.startsWith('/api')));
+});
+
+test('only owners can request permanent deletion of a private case and stored documents', () => {
+  const api = read('api/applicant-tutor.ts');
+  const workspace = read('src/components/ApplicantTutorWorkspace.tsx');
+  const schema = read('supabase/setup/chatmi-applicant-tutor.sql');
+  assert.match(api, /action === 'delete_case'/);
+  assert.match(api, /target\.owner_id !== auth\.user\.id/);
+  assert.match(api, /confirmation !== target\.applicant_name/);
+  assert.match(api, /admin\.storage/);
+  assert.match(api, /\.remove\(paths\.slice/);
+  assert.match(api, /\.delete\(\)\.eq\('id', caseId\)\.eq\('owner_id', auth\.user\.id\)/);
+  assert.match(api, /action === 'leave'/);
+  assert.match(workspace, /Eliminar expediente y documentos definitivamente/);
+  assert.match(workspace, /Cancelar una suscripción no elimina automáticamente estos datos/);
+  assert.match(schema, /on delete cascade/);
+  assert.match(schema, /'chatmi-applicant-cases','chatmi-applicant-cases',false/);
+  assert.doesNotMatch(api, /delete from storage\.objects/i);
+});
