@@ -1,3 +1,4 @@
+import { readServerEnv } from '../server/env';
 import {
   requireAuthenticatedUser,
   type RequestLike,
@@ -9,7 +10,7 @@ interface ApiResponse {
   setHeader?(name: string, value: string): void;
 }
 
-const LIVE_MODEL = process.env.GEMINI_LIVE_MODEL || 'gemini-3.8-live';
+const LIVE_MODEL = readServerEnv('GEMINI_LIVE_MODEL') || 'gemini-3.8-live';
 
 export default async function handler(
   req: RequestLike & { method?: string },
@@ -27,7 +28,7 @@ export default async function handler(
   }
 
   const apiKey = (
-    process.env.GEMINI_API_KEY ||
+    readServerEnv('GEMINI_API_KEY') ||
     ''
   ).trim();
 
