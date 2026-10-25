@@ -20,7 +20,7 @@ type Document = {
   size_bytes: number;
   storage_path: string;
 };
-type TutorMessage = { id?: string; role: 'user' | 'model'; content: string };
+type TutorMessage = { id?: string; role: 'user' | 'model'; content: string; created_at?: string };
 type Category = 'perfil' | 'carta' | 'foto' | 'formulario' | 'otro';
 
 const BUCKET = 'chatmi-applicant-cases';
@@ -72,6 +72,7 @@ export default function ApplicantTutorWorkspace() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [messages, setMessages] = useState<TutorMessage[]>([]);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
   const [name, setName] = useState('');
   const [nationality, setNationality] = useState('');
   const [destination, setDestination] = useState('');
@@ -113,6 +114,7 @@ export default function ApplicantTutorWorkspace() {
       setDocuments([]);
       setSelectedDocs([]);
       setMessages([]);
+      setHasOlderMessages(false);
       return;
     }
     const [fileRows, chatRows] = await Promise.all([
@@ -120,8 +122,8 @@ export default function ApplicantTutorWorkspace() {
         .select('id,case_id,uploaded_by,filename,mime_type,category,size_bytes,storage_path')
         .eq('case_id', caseId).order('created_at', { ascending: false }),
       supabase.from('applicant_case_messages')
-        .select('id,role,content')
-        .eq('case_id', caseId).order('created_at', { ascending: true }).limit(100),
+        .select('id,role,content,created_at')
+        .eq('case_id', caseId).order('created_at', { ascending: false }).limit(100),
     ]);
     if (fileRows.error || chatRows.error) {
       throw new Error('No se pudieron cargar los documentos o la tutoría.');
@@ -132,8 +134,35 @@ export default function ApplicantTutorWorkspace() {
       const kept = prev.filter((id) => nextDocs.some((doc) => doc.id === id));
       return (kept.length ? kept : nextDocs.slice(0, 4).map((doc) => doc.id)).slice(0, 4);
     });
-    setMessages((chatRows.data || []) as TutorMessage[]);
+    const latest = (chatRows.data || []) as TutorMessage[];
+    setMessages([...latest].reverse());
+    setHasOlderMessages(latest.length === 100);
   }, []);
+
+  const loadOlderMessages = async () => {
+    if (!selectedId || busy || !messages.length) return;
+    const before = messages[0].created_at;
+    if (!before) return;
+    setBusy(true);
+    setError('');
+    try {
+      const { data, error: moreError } = await supabase
+        .from('applicant_case_messages')
+        .select('id,role,content,created_at')
+        .eq('case_id', selectedId)
+        .lt('created_at', before)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (moreError) throw new Error('No se pudo recuperar el historial anterior.');
+      const older = (data || []) as TutorMessage[];
+      setMessages((current) => [...older.reverse(), ...current]);
+      setHasOlderMessages(older.length === 100);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No se pudo cargar el historial.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     void refreshCases().catch((caught) => setError(caught.message));
@@ -147,6 +176,10 @@ export default function ApplicantTutorWorkspace() {
 
   useEffect(() => {
     setError('');
+    setDocuments([]);
+    setSelectedDocs([]);
+    setMessages([]);
+    setHasOlderMessages(false);
     void refreshCaseData(selectedId).catch((caught) => setError(caught.message));
   }, [selectedId, refreshCaseData]);
 
@@ -484,6 +517,11 @@ export default function ApplicantTutorWorkspace() {
               <h2>Tutor de este expediente</h2>
               <p className="cm-case-tutor-hint">Responde solo sobre este aplicante, el perfil y los documentos seleccionados. Si un dato no consta, lo indicará.</p>
               <div className="cm-case-tutor-thread" aria-live="polite">
+                {hasOlderMessages && (
+                  <button type="button" disabled={busy} onClick={() => void loadOlderMessages()}>
+                    Cargar mensajes anteriores
+                  </button>
+                )}
                 {messages.map((msg, index) => (
                   <div key={msg.id || index} className={'cm-case-tutor-message ' + (msg.role === 'model' ? 'is-tutor' : 'is-applicant')}>
                     <strong>{msg.role === 'model' ? 'Tutor' : 'Pregunta'}</strong>
