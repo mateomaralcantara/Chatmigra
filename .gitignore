@@ -10,7 +10,10 @@ lerna-debug.log*
 node_modules
 dist
 .env
-.env.local
+.env.*
+!.env.example
+.vercel/
+.hardening-backups/
 dist-ssr
 
 # Editor directories and files
