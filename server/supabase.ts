@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient, type User as SupabaseUser } from '@supabase/supabase-js';
+import { readServerEnv } from './env';
 
 export interface RequestLike {
   headers?: Record<string, string | string[] | undefined>;
@@ -11,7 +12,7 @@ export interface AuthContext {
 }
 
 function env(name: string): string {
-  return (process.env[name] || '').trim();
+  return readServerEnv(name);
 }
 
 export function getSupabaseConfig(): { url: string; publishableKey: string } | null {
