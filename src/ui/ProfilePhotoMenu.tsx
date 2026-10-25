@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabaseClient';
 
-type Position = 'top' | 'rail';
+type Position = 'top' | 'rail' | 'account';
 
 interface ProfilePhotoMenuProps {
   position: Position;
@@ -187,7 +187,9 @@ export default function ProfilePhotoMenu({ position, onAccount }: ProfilePhotoMe
     <div ref={wrapperRef} className={'cm-profile-wrap cm-profile-wrap--' + position}>
       <button
         type="button"
-        className={position === 'rail' ? 'cm-rail-profile cm-profile-avatar' : 'cm-top-profile cm-profile-avatar'}
+        className={position === 'account'
+          ? 'cm-profile-account-trigger'
+          : position === 'rail' ? 'cm-rail-profile cm-profile-avatar' : 'cm-top-profile cm-profile-avatar'}
         title="Abrir perfil y cargar foto"
         aria-label="Abrir perfil y cargar foto"
         aria-expanded={open}
@@ -197,7 +199,9 @@ export default function ProfilePhotoMenu({ position, onAccount }: ProfilePhotoMe
           setStatus('');
         }}
       >
-        {avatarUrl ? (
+        {position === 'account' ? (
+          <><span aria-hidden="true">📷</span> Subir foto de perfil</>
+        ) : avatarUrl ? (
           <img className="cm-avatar-image" src={avatarUrl} alt="Tu foto de perfil" />
         ) : (
           <span aria-hidden="true">{initial}</span>
@@ -261,9 +265,11 @@ export default function ProfilePhotoMenu({ position, onAccount }: ProfilePhotoMe
           {error && <p className="cm-profile-feedback cm-profile-feedback--error" role="alert">{error}</p>}
           {status && <p className="cm-profile-feedback cm-profile-feedback--success" role="status">{status}</p>}
 
-          <button type="button" className="cm-profile-account" onClick={() => { setOpen(false); onAccount(); }}>
-            Ir a mi cuenta
-          </button>
+          {position !== 'account' && (
+            <button type="button" className="cm-profile-account" onClick={() => { setOpen(false); onAccount(); }}>
+              Ir a mi cuenta
+            </button>
+          )}
         </section>
       )}
     </div>
