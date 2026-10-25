@@ -74,7 +74,7 @@ test('quota hardening revokes user-facing RPC access and uses idempotent reserva
 test('Gemini server routes cannot fall back to publicly prefixed secrets', () => {
   for (const path of ['api/gemini.ts', 'api/gemini-ephemeral-token.ts']) {
     const code = read(path);
-    assert.match(code, /process\.env\.GEMINI_API_KEY/);
+    assert.match(code, /readServerEnv\('GEMINI_API_KEY'\)/);
     assert.doesNotMatch(code, /process\.env\.VITE_GEMINI_API_KEY/);
   }
 });
@@ -87,7 +87,7 @@ test('production build does not publish source maps', () => {
 test('ChatMi uses a supported Gemini 3.8 Flash text model by default', () => {
   const api = read('api/gemini.ts');
   const example = read('.env.example');
-  assert.match(api, /GEMINI_TEXT_MODEL \|\| 'gemini-3\.8-flash'/);
+  assert.match(api, /readServerEnv\('GEMINI_TEXT_MODEL'\) \|\| 'gemini-3\.8-flash'/);
   assert.match(example, /GEMINI_TEXT_MODEL=gemini-3\.8-flash/);
   assert.doesNotMatch(api, /temperature:\s*0\.35/);
 });
@@ -217,4 +217,22 @@ test('admin chat also supports authenticated expediente analysis', () => {
   assert.match(admin, /analyzeMigrationDocument\(file, question\)/);
   assert.match(admin, /onAnalyzeDocument=\{handleAnalyzeAdminDocument\}/);
   assert.match(input, /onAnalyzeDocument: \(file: File, instructions: string\) => Promise<void>/);
+});
+
+
+test('Vercel dev server reads local server-only files without leaking production secrets', () => {
+  const env = read('server/env.ts');
+  const supabase = read('server/supabase.ts');
+  const gemini = read('api/gemini.ts');
+  const live = read('api/gemini-ephemeral-token.ts');
+  assert.match(env, /process\.env\.NODE_ENV === 'production'/);
+  assert.match(env, /process\.env\.VERCEL_ENV === 'production'/);
+  assert.match(env, /process\.env\.VERCEL_ENV === 'preview'/);
+  assert.match(env, /'\.env\.development\.local', '\.env\.local'/);
+  assert.doesNotMatch(env, /'\.env'\]/);
+  assert.match(env, /parse\(readFileSync\(resolve\(process\.cwd\(\), filename\)\)\)/);
+  assert.match(supabase, /return readServerEnv\(name\)/);
+  assert.match(gemini, /readServerEnv\('GEMINI_API_KEY'\)/);
+  assert.match(live, /readServerEnv\('GEMINI_API_KEY'\)/);
+  assert.doesNotMatch(read('src/services/geminiService.ts'), /readServerEnv/);
 });
