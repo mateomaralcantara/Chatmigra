@@ -28,7 +28,6 @@ export default async function handler(
 
   const apiKey = (
     process.env.GEMINI_API_KEY ||
-    process.env.VITE_GEMINI_API_KEY ||
     ''
   ).trim();
 
