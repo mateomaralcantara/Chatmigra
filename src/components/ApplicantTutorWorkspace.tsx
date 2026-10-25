@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, useRef, type ChangeEvent, type FormEvent } from 'react';
 import { supabase } from '../services/supabaseClient';
 
 type Case = {
@@ -69,6 +69,7 @@ async function tutorApi(body: Record<string, unknown>) {
 export default function ApplicantTutorWorkspace() {
   const [cases, setCases] = useState<Case[]>([]);
   const [selectedId, setSelectedId] = useState<string>(caseIdFromLocation);
+  const activeCaseRef = useRef(selectedId);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [messages, setMessages] = useState<TutorMessage[]>([]);
@@ -128,6 +129,7 @@ export default function ApplicantTutorWorkspace() {
     if (fileRows.error || chatRows.error) {
       throw new Error('No se pudieron cargar los documentos o la tutoría.');
     }
+    if (activeCaseRef.current !== caseId) return;
     const nextDocs = (fileRows.data || []) as Document[];
     setDocuments(nextDocs);
     setSelectedDocs((prev) => {
@@ -154,6 +156,7 @@ export default function ApplicantTutorWorkspace() {
         .order('created_at', { ascending: false })
         .limit(100);
       if (moreError) throw new Error('No se pudo recuperar el historial anterior.');
+      if (activeCaseRef.current !== selectedId) return;
       const older = (data || []) as TutorMessage[];
       setMessages((current) => [...older.reverse(), ...current]);
       setHasOlderMessages(older.length === 100);
@@ -175,6 +178,7 @@ export default function ApplicantTutorWorkspace() {
   }, []);
 
   useEffect(() => {
+    activeCaseRef.current = selectedId;
     setError('');
     setDocuments([]);
     setSelectedDocs([]);
@@ -401,6 +405,12 @@ export default function ApplicantTutorWorkspace() {
     <section className="cm-case-tutor" aria-label="Tutor Personal del Aplicante">
       <div className="cm-case-tutor-head">
         <h1>Tutor Personal del Aplicante</h1>
+        <a
+          href={window.location.pathname.startsWith('/tutor/') ? window.location.pathname : '/tutor'}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="cm-case-tutor-new-tab"
+        >Abrir Tutor en otra pestaña</a>
         <p>Un espacio independiente por aplicante. Perfil, cartas, fotografías, formularios y conversaciones guardados en Supabase.</p>
         <button className="cm-case-tutor-back" type="button" onClick={() => {
           setSelectedId('');
