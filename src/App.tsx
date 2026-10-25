@@ -528,7 +528,13 @@ const App: React.FC<AppProps> = ({
       }
     };
     const onPopState = () => setCurrentView(viewFromPath(window.location.pathname));
-    const onVoice = () => void toggleVoiceAgent();
+    const onVoice = () => {
+      if (window.location.pathname === '/tutor' || window.location.pathname.startsWith('/tutor/')) {
+        window.dispatchEvent(new Event('chatmi:tutor-voice'));
+      } else {
+        void toggleVoiceAgent();
+      }
+    };
     const onUpgrade = () => goToPremiumPlan();
     const onHistory = () => setIsHistoryOpen((open) => !open);
 
