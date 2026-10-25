@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, useRef, type ChangeEvent, type FormEvent } from 'react';
 import { supabase } from '../services/supabaseClient';
+import ApplicantCaseTasks from './ApplicantCaseTasks';
 
 type Case = {
   id: string;
@@ -499,6 +500,8 @@ export default function ApplicantTutorWorkspace() {
                 {!documents.length && <p>Aún no hay documentos. Sube el perfil, cartas, formularios o fotos.</p>}
               </div>
             </div>
+
+            <ApplicantCaseTasks key={selectedCase.id} caseId={selectedCase.id} ownerId={selectedCase.owner_id} currentUserId={myId} />
 
             {selectedCase.owner_id === myId && (
               <details className="cm-case-tutor-panel">
