@@ -396,3 +396,31 @@ test('only owners can request permanent deletion of a private case and stored do
   assert.match(schema, /'chatmi-applicant-cases','chatmi-applicant-cases',false/);
   assert.doesNotMatch(api, /delete from storage\.objects/i);
 });
+
+test('RAG searches only RLS-authorized chunks and keeps raw-PDF fallback', () => {
+  const sql = read('supabase/setup/chatmi-applicant-tutor-rag.sql');
+  const index = read('api/applicant-index.ts');
+  const tutor = read('src/components/ApplicantTutorChat.tsx');
+  const api = read('api/gemini.ts');
+  assert.match(sql,/applicant_case_document_chunks/);
+  assert.match(sql,/using gin\(to_tsvector\('simple',content\)\)/);
+  assert.match(sql,/security invoker/);
+  assert.match(sql,/enable row level security/);
+  assert.match(sql,/grant select on public\.applicant_case_document_chunks to authenticated/);
+  assert.match(sql,/applicant_case_index_jobs/);
+  assert.doesNotMatch(sql,/security definer/i);
+  assert.match(index,/requireAuthenticatedUser\(req\)/);
+  assert.match(index,/getAdminSupabase\(\)/);
+  assert.match(index,/chatmi_reserve_tokens_server/);
+  assert.match(index,/chatmi_finalize_tokens_server/);
+  assert.match(index,/doc\.case_id\+'\/'\+doc\.uploaded_by/);
+  assert.match(index,/INDEX_INCOMPLETE/);
+  assert.match(index,/existing\?\.length/);
+  assert.match(api,/\.rpc\('search_applicant_case_chunks'/);
+  assert.match(api,/retrievalMode = 'indexed'/);
+  assert.match(api,/if \(!retrievedContext\)/);
+  assert.match(api,/caseParts\.push/);
+  assert.match(tutor,/Preparar búsqueda rápida/);
+  assert.match(tutor,/\/api\/applicant-index/);
+  assert.match(tutor,/indexedIds/);
+});
