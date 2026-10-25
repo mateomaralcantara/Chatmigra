@@ -275,26 +275,32 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         'Categoría: ' + (applicantCase.visa_type || 'No indicada'),
         'Notas del caso: ' + (applicantCase.profile_notes || 'Sin notas'),
       ].join('\n');
-      const ids = Array.isArray(body.documentIds)
-        ? body.documentIds.filter((value): value is string => typeof value === 'string' && CASE_ID.test(value))
+      const explicitSelection = Array.isArray(body.documentIds);
+      const ids = explicitSelection
+        ? (body.documentIds as unknown[]).filter((value): value is string => typeof value === 'string' && CASE_ID.test(value))
         : [];
-      if (ids.length !== new Set(ids).size || ids.length > CASE_FILE_LIMIT) {
+      if ((explicitSelection && ids.length !== (body.documentIds as unknown[]).length) ||
+          ids.length !== new Set(ids).size || ids.length > CASE_FILE_LIMIT) {
         return res.status(400).json({ error: 'Selecciona hasta cuatro documentos diferentes.' });
       }
-      let query = auth.supabase.from('applicant_case_documents')
-        .select('id,filename,mime_type,storage_path,size_bytes')
-        .eq('case_id', requestedCaseId);
-      if (ids.length) query = query.in('id', ids);
-      const { data: docs, error: docsError } = await query
-        .order('created_at', { ascending: false })
-        .limit(CASE_FILE_LIMIT);
-      if (docsError) {
-        return res.status(503).json({ error: 'No se pudieron consultar los documentos del expediente.' });
+      let docs: { id: string; filename: string; mime_type: string; storage_path: string; size_bytes: number }[] = [];
+      if (!explicitSelection || ids.length) {
+        let query = auth.supabase.from('applicant_case_documents')
+          .select('id,filename,mime_type,storage_path,size_bytes')
+          .eq('case_id', requestedCaseId);
+        if (ids.length) query = query.in('id', ids);
+        const { data: found, error: docsError } = await query
+          .order('created_at', { ascending: false })
+          .limit(CASE_FILE_LIMIT);
+        if (docsError) {
+          return res.status(503).json({ error: 'No se pudieron consultar los documentos del expediente.' });
+        }
+        docs = found || [];
+        if (ids.length && docs.length !== ids.length) {
+          return res.status(403).json({ error: 'Algún documento no pertenece a este expediente.' });
+        }
       }
-      if (ids.length && (!docs || docs.length !== ids.length)) {
-        return res.status(403).json({ error: 'Algún documento no pertenece a este expediente.' });
-      }
-      if (docs?.length) {
+      if (docs.length) {
         const admin = getAdminSupabase();
         if (!admin) {
           return res.status(503).json({ error: 'Falta configurar el almacenamiento privado del Tutor.' });
