@@ -152,6 +152,20 @@ const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       </form>
 
+      <div className="cm-expediente-tools">
+        <button
+          type="button"
+          className="cm-expediente-open"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isLoading}
+          aria-label="Subir expediente para análisis del Tutor Migratorio"
+        >
+          <span aria-hidden="true">📁</span>
+          Subir expediente
+          <span className="cm-expediente-open-detail">· Tutor Migratorio</span>
+        </button>
+        <span className="cm-expediente-open-formats">PDF o imagen · Hasta 2 MB</span>
+      </div>
       {attachment && (
         <p className="cm-expediente-privacy">
           Tutor Migratorio · El documento se envía para análisis con IA y no se archiva automáticamente en ChatMi.
