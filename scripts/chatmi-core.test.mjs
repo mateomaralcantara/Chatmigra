@@ -207,3 +207,14 @@ test('tutor validates inline document and uses server-only Gemini key', () => {
   assert.doesNotMatch(api, /:generateContent\?key=/);
   assert.match(api, /requireAuthenticatedUser\(req\)/);
 });
+
+
+test('admin chat also supports authenticated expediente analysis', () => {
+  const admin = read('src/AdminApp.tsx');
+  const input = read('src/components/ChatInput.tsx');
+  assert.match(admin, /import \{ analyzeMigrationDocument, runChatStream \}/);
+  assert.match(admin, /const handleAnalyzeAdminDocument = useCallback/);
+  assert.match(admin, /analyzeMigrationDocument\(file, question\)/);
+  assert.match(admin, /onAnalyzeDocument=\{handleAnalyzeAdminDocument\}/);
+  assert.match(input, /onAnalyzeDocument: \(file: File, instructions: string\) => Promise<void>/);
+});
