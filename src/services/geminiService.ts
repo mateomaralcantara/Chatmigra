@@ -94,6 +94,69 @@ export async function* runChatStream(
   };
 }
 
+
+export const EXPEDIENTE_MAX_BYTES = 2 * 1024 * 1024;
+export const EXPEDIENTE_ALLOWED_MIMES = [
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+] as const;
+
+export async function analyzeMigrationDocument(
+  file: File,
+  instructions: string,
+): Promise<string> {
+  if (file.size === 0 || file.size > EXPEDIENTE_MAX_BYTES) {
+    throw new Error('El expediente debe pesar entre 1 byte y 2 MB.');
+  }
+  if (!EXPEDIENTE_ALLOWED_MIMES.includes(file.type as (typeof EXPEDIENTE_ALLOWED_MIMES)[number])) {
+    throw new Error('Sube un PDF o una imagen JPG, PNG o WebP.');
+  }
+
+  // The document is sent to our authenticated backend over HTTPS; never to public Storage.
+  const encoded = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('No se pudo leer el expediente.'));
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        reject(new Error('No se pudo leer el expediente.'));
+        return;
+      }
+      const comma = reader.result.indexOf(',');
+      if (comma < 0) {
+        reject(new Error('El archivo no tiene un formato válido.'));
+        return;
+      }
+      resolve(reader.result.slice(comma + 1));
+    };
+    reader.readAsDataURL(file);
+  });
+
+  const response = await fetch('/api/gemini', {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify({
+      messages: [{
+        role: 'user',
+        content: (instructions.trim() || 'Analiza este expediente migratorio y prepara un informe detallado de revisión.').slice(0, 2500),
+      }],
+      attachment: {
+        name: file.name.slice(0, 120),
+        mimeType: file.type,
+        data: encoded,
+      },
+    }),
+  });
+  const data = (await response.json().catch(() => ({}))) as ChatApiResponse;
+  if (!response.ok) {
+    throw new Error(data.error || 'No se pudo analizar el expediente.');
+  }
+  const text = typeof data.text === 'string' ? data.text.trim() : '';
+  if (!text) throw new Error('Gemini no devolvió un análisis del expediente.');
+  return text;
+}
+
 interface VoiceAgentCallbacks {
   onOpen: () => void;
   onUserTranscription: (text: string) => void;
