@@ -83,3 +83,11 @@ test('production build does not publish source maps', () => {
   const viteConfig = read('vite.config.ts');
   assert.match(viteConfig, /sourcemap:\s*false/);
 });
+
+test('ChatMi uses a supported Gemini 3.8 Flash text model by default', () => {
+  const api = read('api/gemini.ts');
+  const example = read('.env.example');
+  assert.match(api, /GEMINI_TEXT_MODEL \|\| 'gemini-3\.8-flash'/);
+  assert.match(example, /GEMINI_TEXT_MODEL=gemini-3\.8-flash/);
+  assert.doesNotMatch(api, /temperature:\s*0\.35/);
+});
