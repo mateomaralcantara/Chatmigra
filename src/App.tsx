@@ -19,6 +19,16 @@ import VoiceAgentOverlay from './components/VoiceAgentOverlay';
 import { logActivity } from './services/activityService';
 
 type View = 'chat' | 'dashboard' | 'tutor';
+
+function viewFromPath(path: string): View {
+  if (path === '/tutor' || path.startsWith('/tutor/')) return 'tutor';
+  if (path === '/work') return 'dashboard';
+  return 'chat';
+}
+
+function pathForView(view: View): string {
+  return view === 'tutor' ? '/tutor' : view === 'dashboard' ? '/work' : '/';
+}
 type AgentStatus = 'idle' | 'connecting' | 'listening' | 'speaking' | 'error';
 
 interface VoiceSession {
@@ -63,7 +73,7 @@ const App: React.FC<AppProps> = ({
   const [currentConversationId, setCurrentConversationId] =
     useState<string | null>(null);
 
-  const [currentView, setCurrentView] = useState<View>(initialView ?? 'chat');
+  const [currentView, setCurrentView] = useState<View>(() => viewFromPath(window.location.pathname));
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focusPremium, setFocusPremium] = useState(false);
@@ -498,23 +508,34 @@ const App: React.FC<AppProps> = ({
 
   const goToPremiumPlan = useCallback(() => {
     setCurrentView('dashboard');
+    window.history.pushState({}, '', '/work');
     setFocusPremium(true);
   }, []);
 
   useEffect(() => {
-    const onNewChat = () => handleNewConversation();
+    const onNewChat = () => {
+      handleNewConversation();
+      if (window.location.pathname !== '/') window.history.pushState({}, '', '/');
+      setCurrentView('chat');
+    };
     const onNavigate = (event: Event) => {
       const detail = (event as CustomEvent<string>).detail;
       if (detail === 'chat' || detail === 'dashboard' || detail === 'tutor') {
+        const path = pathForView(detail);
+        if (window.location.pathname !== path) {
+          window.history.pushState({}, '', path);
+        }
         setCurrentView(detail);
       }
     };
+    const onPopState = () => setCurrentView(viewFromPath(window.location.pathname));
     const onVoice = () => void toggleVoiceAgent();
     const onUpgrade = () => goToPremiumPlan();
     const onHistory = () => setIsHistoryOpen((open) => !open);
 
     window.addEventListener('chatmi:new-chat', onNewChat);
     window.addEventListener('chatmi:navigate', onNavigate);
+    window.addEventListener('popstate', onPopState);
     window.addEventListener('chatmi:voice', onVoice);
     window.addEventListener('chatmi:upgrade', onUpgrade);
     window.addEventListener('chatmi:history', onHistory);
@@ -522,6 +543,7 @@ const App: React.FC<AppProps> = ({
     return () => {
       window.removeEventListener('chatmi:new-chat', onNewChat);
       window.removeEventListener('chatmi:navigate', onNavigate);
+      window.removeEventListener('popstate', onPopState);
       window.removeEventListener('chatmi:voice', onVoice);
       window.removeEventListener('chatmi:upgrade', onUpgrade);
       window.removeEventListener('chatmi:history', onHistory);
