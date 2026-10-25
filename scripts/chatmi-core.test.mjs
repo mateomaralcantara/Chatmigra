@@ -126,3 +126,19 @@ test('upgrade promotion has readable dark text over amber background', () => {
   const component = read('src/components/UpgradeTeaser.tsx');
   assert.match(component, /bg-amber-50 border border-amber-300 text-amber-950/);
 });
+
+
+test('long chat paragraphs are justified and response headings are large', () => {
+  const markup = read('src/components/ChatMessage.tsx');
+  const styles = read('src/styles/chatmi-ultimate.css');
+
+  assert.match(markup, /className="cm-answer-title /);
+  assert.match(markup, /className="cm-answer-body /);
+  assert.match(markup, /className="cm-user-paragraph /);
+  assert.match(styles, /\.cm-reference-shell \.cm-chat-thread \.cm-answer-body,/);
+  assert.match(styles, /text-align:\s*justify;/);
+  assert.match(styles, /text-justify:\s*inter-word;/);
+  assert.match(styles, /\.cm-chat-thread \[data-role="assistant"\] \.cm-answer-title/);
+  assert.match(styles, /font-size:\s*clamp\(25px, 2\.6vw, 35px\)\s*!important/);
+  assert.match(styles, /\.cm-home-title\s*\{\s*font-size:\s*clamp\(32px, 3\.7vw, 48px\)/);
+});
