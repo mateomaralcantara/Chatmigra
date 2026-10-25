@@ -15,7 +15,7 @@ const UpgradeTeaser: React.FC<UpgradeTeaserProps> = ({
   if (currentPlan !== 'free') return null;
 
   return (
-    <div className="mt-2 text-xs bg-amber-500/10 border border-amber-500/40 text-amber-100 rounded-xl px-3 py-2 flex items-center justify-between gap-3">
+    <div className="mt-2 text-xs bg-amber-50 border border-amber-300 text-amber-950 rounded-xl px-3 py-2 flex items-center justify-between gap-3">
       <p className="flex-1">
         Estás usando el plan{' '}
         <span className="font-semibold uppercase">Free</span>.  
@@ -24,7 +24,7 @@ const UpgradeTeaser: React.FC<UpgradeTeaserProps> = ({
       <button
         type="button"
         onClick={onUpgradeClick}
-        className="shrink-0 inline-flex items-center justify-center px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-amber-400 text-black hover:bg-amber-300 transition"
+        className="shrink-0 inline-flex items-center justify-center px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-amber-400 text-amber-950 hover:bg-amber-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700 transition"
       >
         Mejorar plan
       </button>
