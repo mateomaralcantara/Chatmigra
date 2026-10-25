@@ -1,7 +1,7 @@
 // src/AdminApp.tsx
 import React, { useState, useCallback } from 'react';
 import { supabase } from './services/supabaseClient';
-import { runChatStream } from './services/geminiService';
+import { analyzeMigrationDocument, runChatStream } from './services/geminiService';
 import AdminDashboard from './components/AdminDashboard';
 import ChatWindow from './components/ChatWindow';
 import ChatInput from './components/ChatInput';
@@ -180,6 +180,38 @@ const AdminApp: React.FC = () => {
     [chatLoading]
   );
 
+  /* ---------- ANALISIS DE EXPEDIENTES (ADMIN) ---------- */
+  const handleAnalyzeAdminDocument = useCallback(
+    async (file: File, instructions: string): Promise<void> => {
+      if (chatLoading) return;
+
+      setChatError(null);
+      setChatLoading(true);
+
+      const question = instructions.trim() ||
+        'Revisa este expediente migratorio y señala documentos faltantes, inconsistencias y próximos pasos.';
+      const userMessage: ChatMessage = {
+        role: 'user',
+        content: '📎 Expediente: ' + file.name + '\n' + question,
+      };
+
+      // No guardar archivos ni el informe en la base de datos.
+      setMessages([userMessage, { role: 'model', content: '' }]);
+
+      try {
+        const report = await analyzeMigrationDocument(file, question);
+        setMessages([userMessage, { role: 'model', content: report }]);
+      } catch (error) {
+        setMessages([userMessage]);
+        setChatError(error instanceof Error ? error.message : 'No se pudo analizar el expediente.');
+        throw error; // ChatInput muestra el error y conserva el archivo seleccionado.
+      } finally {
+        setChatLoading(false);
+      }
+    },
+    [chatLoading],
+  );
+
   /* ---------- UI ---------- */
 
   // sin admin → login
@@ -309,6 +341,7 @@ const AdminApp: React.FC = () => {
             <div className="bg-slate-950/70 border-t border-slate-800">
               <ChatInput
                 onSendMessage={handleSendAdminMessage}
+                onAnalyzeDocument={handleAnalyzeAdminDocument}
                 isLoading={chatLoading}
                 onToggleVoice={() => {
                   alert(
