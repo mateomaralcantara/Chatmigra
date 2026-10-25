@@ -47,3 +47,25 @@ test('Supabase migration exists for core tables and RLS', () => {
   assert.match(sql, /chatmi_reserve_tokens/i);
   assert.match(sql, /chatmi_finalize_tokens/i);
 });
+
+
+test('free Gemini requests require server-only, fail-closed quota enforcement', () => {
+  const api = read('api/gemini.ts');
+  assert.match(api, /getAdminSupabase\(\)/);
+  assert.match(api, /chatmi_reserve_tokens_server/);
+  assert.match(api, /chatmi_finalize_tokens_server/);
+  assert.match(api, /QUOTA_SERVICE_UNAVAILABLE/);
+  assert.doesNotMatch(api, /request allowed in degraded mode/);
+  assert.doesNotMatch(api, /auth\.supabase\.rpc\('chatmi_/);
+});
+
+test('quota hardening revokes user-facing RPC access and uses idempotent reservations', () => {
+  const sql = read('supabase/migrations/202610250001_chatmi_server_only_quotas.sql');
+  assert.match(sql, /create table if not exists public\.chatmi_token_reservations/);
+  assert.match(sql, /for update;/);
+  assert.match(sql, /revoke all on function public\.chatmi_reserve_tokens\(integer\)/);
+  assert.match(sql, /revoke all on function public\.chatmi_finalize_tokens\(integer, integer\)/);
+  assert.match(sql, /grant execute on function public\.chatmi_reserve_tokens_server\(uuid, integer\)/);
+  assert.match(sql, /grant execute on function public\.chatmi_finalize_tokens_server\(uuid, integer\)/);
+  assert.doesNotMatch(sql, /drop table/i);
+});
