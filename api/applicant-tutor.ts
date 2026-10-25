@@ -33,7 +33,7 @@ export default async function handler(req: Request, res: Response) {
   }
   const body = payload(req.body);
   const action = body.action;
-  if (action !== 'invite' && action !== 'redeem') {
+  if (action !== 'invite' && action !== 'redeem' && action !== 'delete_case' && action !== 'leave') {
     return res.status(400).json({ error: 'Acción no reconocida.' });
   }
   const admin = getAdminSupabase();
@@ -42,6 +42,79 @@ export default async function handler(req: Request, res: Response) {
   });
 
   try {
+    if (action === 'delete_case' || action === 'leave') {
+      const caseId = typeof body.caseId === 'string' ? body.caseId : '';
+      if (!UUID_PATTERN.test(caseId)) {
+        return res.status(400).json({ error: 'Expediente incorrecto.' });
+      }
+
+      const { data: target, error: caseError } = await auth.supabase
+        .from('applicant_cases')
+        .select('id,owner_id,applicant_name')
+        .eq('id', caseId)
+        .maybeSingle();
+      if (caseError || !target) {
+        return res.status(403).json({ error: 'No tienes acceso a este expediente.' });
+      }
+
+      if (action === 'leave') {
+        if (target.owner_id === auth.user.id) {
+          return res.status(400).json({ error: 'El responsable debe eliminar el expediente, no abandonar su propio caso.' });
+        }
+        const { error: leaveError } = await admin.from('applicant_case_members')
+          .delete().eq('case_id', caseId).eq('user_id', auth.user.id);
+        if (leaveError) throw new Error('CASE_LEAVE_FAILED');
+        return res.status(200).json({ success: true });
+      }
+
+      if (target.owner_id !== auth.user.id) {
+        return res.status(403).json({ error: 'Solo el responsable puede eliminar este expediente.' });
+      }
+      const confirmation = typeof body.confirmName === 'string' ? body.confirmName.trim() : '';
+      if (!confirmation || confirmation !== target.applicant_name) {
+        return res.status(400).json({ error: 'Escribe exactamente el nombre del aplicante para confirmar.' });
+      }
+
+      // Delete stored files through Storage API BEFORE cascading relational rows.
+      // Never DELETE directly from storage.objects (would leave orphaned objects).
+      const paths: string[] = [];
+      let offset = 0;
+      while (true) {
+        const { data: batch, error: fileError } = await admin
+          .from('applicant_case_documents')
+          .select('storage_path')
+          .eq('case_id', caseId)
+          .order('id', { ascending: true })
+          .range(offset, offset + 199);
+        if (fileError) throw new Error('CASE_DOCUMENT_SCAN_FAILED');
+        if (!batch?.length) break;
+        for (const row of batch) {
+          if (typeof row.storage_path !== 'string' ||
+              !row.storage_path.startsWith(caseId + '/')) {
+            throw new Error('CASE_DOCUMENT_PATH_INVALID');
+          }
+          paths.push(row.storage_path);
+        }
+        if (batch.length < 200) break;
+        offset += batch.length;
+        if (paths.length > 1000) {
+          return res.status(413).json({ error: 'Expediente demasiado grande para esta operación. Contacta soporte para eliminación segura.' });
+        }
+      }
+      for (let i = 0; i < paths.length; i += 100) {
+        const { error: removeError } = await admin.storage
+          .from('chatmi-applicant-cases')
+          .remove(paths.slice(i, i + 100));
+        if (removeError) throw new Error('CASE_STORAGE_DELETE_FAILED');
+      }
+      const { data: deleted, error: deleteError } = await admin
+        .from('applicant_cases')
+        .delete().eq('id', caseId).eq('owner_id', auth.user.id)
+        .select('id');
+      if (deleteError || !deleted?.length) throw new Error('CASE_DELETE_FAILED');
+      return res.status(200).json({ success: true, removedDocuments: paths.length });
+    }
+
     if (action === 'invite') {
       const caseId = typeof body.caseId === 'string' ? body.caseId : '';
       const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
@@ -112,7 +185,7 @@ export default async function handler(req: Request, res: Response) {
     return res.status(200).json({ caseId: invite.case_id });
   } catch {
     return res.status(500).json({
-      error: 'No se pudo completar la invitación. Revisa la configuración del Tutor.',
+      error: 'No se pudo completar la operación del expediente. Revisa el estado del Tutor.',
     });
   }
 }
