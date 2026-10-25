@@ -251,6 +251,29 @@ test('tutor shows HTTP failures including gateway 413 instead of silent generic 
 });
 
 
+test('tutor streams full authenticated answers and flags incomplete generations', () => {
+  const api = read('api/gemini.ts');
+  const tutor = read('src/components/ApplicantTutorChat.tsx');
+  assert.match(api, /:streamGenerateContent\?alt=sse/);
+  assert.match(api, /application\/x-ndjson/);
+  assert.match(api, /type: 'delta'/);
+  assert.match(api, /type: 'done'/);
+  assert.match(api, /finishReason === 'STOP'/);
+  assert.match(api, /await finalizeQuota\(observedTokens\)/);
+  assert.match(api, /Promise\.all\(docs\.map\(async \(doc\)/);
+  assert.match(api, /thinkingLevel: 'low'/);
+  assert.match(api, /quickCaseFact\(lastQuestion, applicantCase\)/);
+  assert.match(api, /verified-case-profile/);
+  assert.match(tutor, /stream: true/);
+  assert.match(tutor, /result\.body\.getReader\(\)/);
+  assert.match(tutor, /frame\.type === 'delta'/);
+  assert.match(tutor, /sawDone/);
+  assert.match(tutor, /setReplyIncomplete\(!complete\)/);
+  assert.match(tutor, /Continuar respuesta/);
+  assert.match(tutor, /responseText\.match/);
+  assert.doesNotMatch(tutor, /content: responseText\.slice\(0, 15000\)/);
+});
+
 test('case tutor answers the last specific question using the correct applicant profile', () => {
   const api = read('api/gemini.ts');
   assert.match(api, /if \(hasCase\)/);
@@ -283,8 +306,8 @@ test('tutor answers direct questions using only requested facts, not long explan
   assert.match(api, /No consta en el expediente/);
   assert.match(api, /como máximo cinco puntos breves/);
   assert.doesNotMatch(api, /Prepara un informe con: resumen del documento/);
-  assert.match(api, /maxOutputTokens: outputTokenLimit\(messages, Boolean\(attachment \|\| caseProfile\)\)/);
-  assert.match(api, /return wantsReview \? 600 : 256/);
+  assert.match(api, /maxOutputTokens: outputTokenLimit\(messages, Boolean\(attachment \|\| caseProfile\), effectivePlan\)/);
+  assert.match(api, /wantsReview \? 3072 : 1600/);
   assert.match(api, /pregunta por UN dato/);
 });
 
