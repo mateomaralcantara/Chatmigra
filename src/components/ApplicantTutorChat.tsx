@@ -226,7 +226,7 @@ export default function ApplicantTutorChat() {
     // bias the answer to a new, complete question.
     const history = messagesRef.current.filter(m => (
       m.role === 'user'
-        ? m.content.trim().split(/\\s+/).filter(Boolean).length >= 3
+        ? m.content.trim().split(/\s+/).filter(Boolean).length >= 3
         : !/^Por favor,? indique qu[eé] dato/i.test(m.content.trim())
     )).slice(-10).map(m => ({ role: m.role, content: m.content }));
     setMessages(previous => [...previous, { role: 'user', content: text }]);
