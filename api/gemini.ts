@@ -29,7 +29,7 @@ interface QuotaReservation {
   reservation_id?: string;
 }
 
-const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash';
+const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || 'gemini-3.8-flash';
 const FREE_TOKENS_MAX = 3000;
 
 function readBody(body: unknown): Record<string, unknown> {
@@ -234,7 +234,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         },
         contents,
         generationConfig: {
-          temperature: 0.35,
           maxOutputTokens: effectivePlan === 'free' ? 700 : 2048,
         },
       }),
