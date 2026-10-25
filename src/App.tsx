@@ -7,7 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { type ChatMessage, type Conversation, Plan, type User } from './types';
-import { connectToVoiceAgent, runChatStream } from './services/geminiService';
+import { analyzeMigrationDocument, connectToVoiceAgent, runChatStream } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 import AccountDashboard from './components/AccountDashboard';
 import ChatInput from './components/ChatInput';
@@ -373,6 +373,40 @@ const App: React.FC<AppProps> = ({
     ],
   );
 
+  const handleAnalyzeDocument = useCallback(
+    async (file: File, instructions: string): Promise<void> => {
+      if (isLoading) return;
+      setError(null);
+      setIsLoading(true);
+
+      const question = instructions.trim() ||
+        'Revisa este expediente migratorio: requisitos, riesgos, documentos faltantes y próximos pasos.';
+      // Documents are analyzed only in memory. Do not persist raw files, conversation rows,
+      // document text or the resulting sensitive report in the database.
+      setCurrentConversationId(null);
+      setMessages([
+        { role: 'user', content: '📎 Expediente: ' + file.name + '\n' + question },
+        { role: 'model', content: '' },
+      ]);
+
+      try {
+        const report = await analyzeMigrationDocument(file, question);
+        setMessages([
+          { role: 'user', content: '📎 Expediente: ' + file.name + '\n' + question },
+          { role: 'model', content: report },
+        ]);
+      } catch (caught) {
+        setMessages([{ role: 'user', content: '📎 Expediente: ' + file.name + '\n' + question }]);
+        const detail = caught instanceof Error ? caught.message : 'No se pudo analizar el expediente.';
+        setError(detail);
+        throw caught;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [isLoading],
+  );
+
   const stopVoiceAgent = useCallback(
     async (sendTranscript: boolean) => {
       setAgentStatus('idle');
@@ -535,6 +569,7 @@ const App: React.FC<AppProps> = ({
               <div className="cm-home-composer">
                 <ChatInput
                   onSendMessage={handleSendMessage}
+                  onAnalyzeDocument={handleAnalyzeDocument}
                   isLoading={isLoading}
                   onToggleVoice={toggleVoiceAgent}
                   isVoiceActive={isVoiceAgentActive}
@@ -557,6 +592,7 @@ const App: React.FC<AppProps> = ({
               <div className="cm-chat-composer-dock">
                 <ChatInput
                   onSendMessage={handleSendMessage}
+                  onAnalyzeDocument={handleAnalyzeDocument}
                   isLoading={isLoading}
                   onToggleVoice={toggleVoiceAgent}
                   isVoiceActive={isVoiceAgentActive}
