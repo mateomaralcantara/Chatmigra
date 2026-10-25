@@ -31,7 +31,11 @@ function emit(name: string, detail?: unknown): void {
 export default function PremiumShell({ children }: PremiumShellProps) {
   const [palette, setPalette] = useState<PaletteId>(preferredPalette);
   const [paletteMenuOpen, setPaletteMenuOpen] = useState(false);
-  const [activeMode, setActiveMode] = useState<'chat' | 'tutor' | 'dashboard'>('chat');
+  const [activeMode, setActiveMode] = useState<'chat' | 'tutor' | 'dashboard'>(() => {
+    const path = window.location.pathname;
+    return path === '/tutor' || path.startsWith('/tutor/')
+      ? 'tutor' : path === '/work' ? 'dashboard' : 'chat';
+  });
 
   useEffect(() => {
     const onNavigate = (event: Event) => {
@@ -40,8 +44,17 @@ export default function PremiumShell({ children }: PremiumShellProps) {
         setActiveMode(value);
       }
     };
+    const onPopState = () => {
+      const path = window.location.pathname;
+      setActiveMode(path === '/tutor' || path.startsWith('/tutor/')
+        ? 'tutor' : path === '/work' ? 'dashboard' : 'chat');
+    };
     window.addEventListener('chatmi:navigate', onNavigate);
-    return () => window.removeEventListener('chatmi:navigate', onNavigate);
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('chatmi:navigate', onNavigate);
+      window.removeEventListener('popstate', onPopState);
+    };
   }, []);
 
   useEffect(() => {
@@ -133,7 +146,7 @@ export default function PremiumShell({ children }: PremiumShellProps) {
               className={activeMode === 'tutor' ? 'is-active' : ''}
               onClick={() => emit('chatmi:navigate', 'tutor')}
             >
-              Tutor
+              Tutor Personal
             </button>
             <button
               type="button"
