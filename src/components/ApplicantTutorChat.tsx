@@ -335,9 +335,14 @@ export default function ApplicantTutorChat() {
       }
       if (!responseText.trim()) throw new Error('Gemini no devolvió una respuesta legible.');
       const user = await loggedInUser();
+      // Split long model text into adjacent stored parts so the 15k row
+      // constraint never silently cuts the answer or loses the continuation.
+      const answerParts = responseText.match(/[\s\S]{1,14000}/g) || [];
       const { error: saveError } = await supabase.from('applicant_case_messages').insert([
         { case_id: queriedCase, created_by: user.id, role: 'user', content: text.slice(0, 15000) },
-        { case_id: queriedCase, created_by: user.id, role: 'model', content: responseText.slice(0, 15000) },
+        ...answerParts.map(content => ({
+          case_id: queriedCase, created_by: user.id, role: 'model' as const, content,
+        })),
       ]);
       if (saveError) throw new Error('La respuesta se mostró pero no pudo guardarse en el historial.');
       if (!mountedRef.current || activeCaseRef.current !== queriedCase) return;
