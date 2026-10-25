@@ -74,7 +74,6 @@ export default function ApplicantTutorChat() {
   const messagesRef = useRef<MessageRow[]>([]);
   const mountedRef = useRef(true);
 
-  const selectedCase = cases.find(item => item.id === caseId);
   useEffect(() => { messagesRef.current = messages; endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages]);
 
   const refreshCases = useCallback(async (preferred?: string) => {
