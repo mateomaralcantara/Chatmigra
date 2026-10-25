@@ -100,3 +100,29 @@ test('API responses do not reveal raw upstream Google errors or key identifiers'
     assert.match(code, /GEMINI_.*ERROR/);
   }
 });
+
+
+test('color palettes remain readable on ChatMi light surfaces', () => {
+  const global = read('src/index.css');
+  const styles = read('src/styles/chatmi-ultimate.css');
+  const shell = read('src/ui/PremiumShell.tsx');
+
+  assert.doesNotMatch(global, /p,\s*\nspan,\s*\nli,/);
+  assert.doesNotMatch(global, /color:\s*#f9fafb/);
+  assert.doesNotMatch(global, /background-color:\s*#ffffff\s*!important/);
+
+  assert.match(styles, /\.cm-reference-shell \.cm-suggestion-copy\s*\{\s*color:\s*var\(--cm-text\)/);
+  assert.match(styles, /\.cm-reference-shell \.cm-rail-button/);
+
+  for (const palette of ['classic', 'ocean', 'mint', 'violet']) {
+    assert.match(shell, new RegExp("id: '" + palette + "'"));
+  }
+  assert.match(shell, /data-cm-theme=\{palette\}/);
+  assert.match(shell, /aria-pressed=\{palette === option\.id\}/);
+  assert.match(shell, /localStorage\.setItem\('chatmi:palette'/);
+});
+
+test('upgrade promotion has readable dark text over amber background', () => {
+  const component = read('src/components/UpgradeTeaser.tsx');
+  assert.match(component, /bg-amber-50 border border-amber-300 text-amber-950/);
+});
