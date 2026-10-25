@@ -103,6 +103,27 @@ export const EXPEDIENTE_ALLOWED_MIMES = [
   'image/webp',
 ] as const;
 
+function expedienteApiError(status: number, data: ChatApiResponse): string {
+  // Vercel and proxies may respond with HTML or an empty body (e.g. HTTP 413).
+  // Never show raw upstream HTML, request bodies, tokens, or personal documents.
+  if (status === 413) {
+    return 'El servidor rechazó el tamaño del expediente (HTTP 413). Reduce el PDF o utiliza una imagen más pequeña.';
+  }
+  if (status === 401) {
+    return 'Tu sesión expiró. Vuelve a iniciar sesión para analizar expedientes.';
+  }
+  if (status === 429) {
+    return data.error || 'Límite de uso o cuota alcanzado (HTTP 429).';
+  }
+  if (status === 503) {
+    return data.error || 'El servicio de cuotas o de análisis no está disponible (HTTP 503).';
+  }
+  if (status === 502 || status === 504) {
+    return 'El servidor de análisis no respondió correctamente (HTTP ' + status + ').';
+  }
+  return data.error || 'No se pudo analizar el expediente (HTTP ' + status + ').';
+}
+
 export async function analyzeMigrationDocument(
   file: File,
   instructions: string,
@@ -133,27 +154,38 @@ export async function analyzeMigrationDocument(
     reader.readAsDataURL(file);
   });
 
-  const response = await fetch('/api/gemini', {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: JSON.stringify({
-      messages: [{
-        role: 'user',
-        content: (instructions.trim() || 'Analiza este expediente migratorio y prepara un informe detallado de revisión.').slice(0, 2500),
-      }],
-      attachment: {
-        name: file.name.slice(0, 120),
-        mimeType: file.type,
-        data: encoded,
-      },
-    }),
-  });
-  const data = (await response.json().catch(() => ({}))) as ChatApiResponse;
+  let response: Response;
+  try {
+    response = await fetch('/api/gemini', {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify({
+        messages: [{
+          role: 'user',
+          content: (instructions.trim() || 'Analiza este expediente migratorio y prepara un informe detallado de revisión.').slice(0, 2500),
+        }],
+        attachment: {
+          name: file.name.slice(0, 120),
+          mimeType: file.type,
+          data: encoded,
+        },
+      }),
+    });
+  } catch {
+    throw new Error('No se pudo conectar con el servidor de análisis. Comprueba que Vercel Dev esté iniciado.');
+  }
+
+  const isJson = response.headers.get('content-type')?.includes('application/json') ?? false;
+  const data: ChatApiResponse = isJson
+    ? (await response.json().catch(() => ({}))) as ChatApiResponse
+    : {};
   if (!response.ok) {
-    throw new Error(data.error || 'No se pudo analizar el expediente.');
+    // Diagnostics do not include the filename or the content of the uploaded document.
+    console.warn('[tutor-migratorio] HTTP', response.status, data.code || 'HTTP_ERROR');
+    throw new Error(expedienteApiError(response.status, data));
   }
   const text = typeof data.text === 'string' ? data.text.trim() : '';
-  if (!text) throw new Error('Gemini no devolvió un análisis del expediente.');
+  if (!text) throw new Error('El servidor no devolvió un análisis legible del expediente.');
   return text;
 }
 
