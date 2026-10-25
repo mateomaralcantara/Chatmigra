@@ -236,3 +236,16 @@ test('Vercel dev server reads local server-only files without leaking production
   assert.match(live, /readServerEnv\('GEMINI_API_KEY'\)/);
   assert.doesNotMatch(read('src/services/geminiService.ts'), /readServerEnv/);
 });
+
+
+test('tutor shows HTTP failures including gateway 413 instead of silent generic errors', () => {
+  const service = read('src/services/geminiService.ts');
+  assert.match(service, /function expedienteApiError\(status: number, data: ChatApiResponse\)/);
+  assert.match(service, /status === 413/);
+  assert.match(service, /status === 503/);
+  assert.match(service, /status === 401/);
+  assert.match(service, /response\.headers\.get\('content-type'\)/);
+  assert.match(service, /expedienteApiError\(response\.status, data\)/);
+  assert.match(service, /console\.warn\('\[tutor-migratorio\] HTTP'/);
+  assert.doesNotMatch(service, /console\.warn\([^;]*encoded/);
+});
