@@ -118,6 +118,12 @@ export default function PremiumShell({ children }: PremiumShellProps) {
             </button>
             <button
               type="button"
+              onClick={() => emit('chatmi:navigate', 'tutor')}
+            >
+              Tutor
+            </button>
+            <button
+              type="button"
               onClick={() => emit('chatmi:navigate', 'dashboard')}
             >
               Work
