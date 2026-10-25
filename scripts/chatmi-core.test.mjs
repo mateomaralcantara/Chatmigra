@@ -151,6 +151,8 @@ test('profile upload appears in both avatar buttons with authenticated storage',
 
   assert.match(shell, /<ProfilePhotoMenu position="rail"/);
   assert.match(shell, /<ProfilePhotoMenu position="top"/);
+  assert.match(read('src/components/AccountDashboard.tsx'), /<ProfilePhotoMenu position="account"/);
+  assert.match(profile, /Subir foto de perfil/);
   assert.match(profile, /Subir foto \(Upload\)/);
   assert.match(profile, /Guardar foto/);
   assert.match(profile, /supabase\.auth\.getUser\(\)/);
