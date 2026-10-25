@@ -88,8 +88,8 @@ export default async function handler(
 
     if (!response.ok || typeof data?.name !== 'string') {
       return res.status(response.ok ? 502 : response.status).json({
-        error: data?.error?.message || 'Unable to create Gemini ephemeral token',
-        code: data?.error?.status || 'GEMINI_LIVE_TOKEN_ERROR',
+        error: 'No se pudo conectar con el servicio de voz de Gemini (HTTP ' + response.status + ').',
+        code: 'GEMINI_LIVE_TOKEN_ERROR',
       });
     }
 
@@ -101,7 +101,7 @@ export default async function handler(
   } catch (error) {
     console.error('[gemini-live] Internal error:', error);
     return res.status(500).json({
-      error: error instanceof Error ? error.message : 'Internal error',
+      error: 'No se pudo completar la solicitud de voz.',
       code: 'GEMINI_LIVE_INTERNAL_ERROR',
     });
   }
