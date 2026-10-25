@@ -1276,3 +1276,95 @@ input {
     width: min(300px, calc(100vw - 46px));
   }
 }
+
+
+/* TUTOR MIGRATORIO - Expediente adjunto en el composer */
+.cm-composer-container {
+  width: 100%;
+  min-width: 0;
+}
+.cm-composer-container .cm-composer {
+  width: 100%;
+}
+.cm-expediente-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  opacity: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.cm-composer-entry {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.cm-composer-entry textarea {
+  width: 100%;
+  flex: 0 1 auto;
+}
+.cm-expediente-attached {
+  display: flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  margin: 0 0 4px;
+  padding: 5px 9px;
+  border: 1px solid var(--cm-border);
+  border-radius: 11px;
+  background: var(--cm-accent-soft);
+  color: var(--cm-text);
+  font-size: 12px;
+}
+.cm-expediente-file-label {
+  max-width: min(300px, 50vw);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--cm-text);
+}
+.cm-expediente-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--cm-panel);
+  color: var(--cm-text);
+  font-size: 19px;
+  cursor: pointer;
+}
+.cm-expediente-remove:hover {
+  background: var(--cm-soft-panel);
+}
+.cm-expediente-privacy,
+.cm-expediente-error {
+  width: 100%;
+  margin: 7px 0 0;
+  padding: 0 6px;
+  color: var(--cm-secondary);
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.cm-expediente-error {
+  color: #a02020;
+  font-weight: 600;
+}
+.cm-composer-plus:disabled {
+  opacity: .5;
+  cursor: wait;
+}
+@media (max-width: 560px) {
+  .cm-expediente-file-label {
+    max-width: 38vw;
+  }
+  .cm-expediente-privacy {
+    font-size: 11px;
+  }
+}
