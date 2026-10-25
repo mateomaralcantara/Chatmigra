@@ -31,6 +31,18 @@ function emit(name: string, detail?: unknown): void {
 export default function PremiumShell({ children }: PremiumShellProps) {
   const [palette, setPalette] = useState<PaletteId>(preferredPalette);
   const [paletteMenuOpen, setPaletteMenuOpen] = useState(false);
+  const [activeMode, setActiveMode] = useState<'chat' | 'tutor' | 'dashboard'>('chat');
+
+  useEffect(() => {
+    const onNavigate = (event: Event) => {
+      const value = (event as CustomEvent<string>).detail;
+      if (value === 'chat' || value === 'tutor' || value === 'dashboard') {
+        setActiveMode(value);
+      }
+    };
+    window.addEventListener('chatmi:navigate', onNavigate);
+    return () => window.removeEventListener('chatmi:navigate', onNavigate);
+  }, []);
 
   useEffect(() => {
     try {
@@ -111,19 +123,21 @@ export default function PremiumShell({ children }: PremiumShellProps) {
           <div className="cm-mode-switch" aria-label="Modo">
             <button
               type="button"
-              className="is-active"
+              className={activeMode === 'chat' ? 'is-active' : ''}
               onClick={() => emit('chatmi:navigate', 'chat')}
             >
               Chat
             </button>
             <button
               type="button"
+              className={activeMode === 'tutor' ? 'is-active' : ''}
               onClick={() => emit('chatmi:navigate', 'tutor')}
             >
               Tutor
             </button>
             <button
               type="button"
+              className={activeMode === 'dashboard' ? 'is-active' : ''}
               onClick={() => emit('chatmi:navigate', 'dashboard')}
             >
               Work
