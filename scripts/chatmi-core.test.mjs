@@ -258,7 +258,7 @@ test('tutor answers direct questions using only requested facts, not long explan
   assert.match(api, /No consta en el expediente/);
   assert.match(api, /como máximo cinco puntos breves/);
   assert.doesNotMatch(api, /Prepara un informe con: resumen del documento/);
-  assert.match(api, /maxOutputTokens: outputTokenLimit\(messages, Boolean\(attachment\)\)/);
+  assert.match(api, /maxOutputTokens: outputTokenLimit\(messages, Boolean\(attachment \|\| caseProfile\)\)/);
   assert.match(api, /return wantsReview \? 600 : 256/);
   assert.match(api, /pregunta por UN dato/);
 });
