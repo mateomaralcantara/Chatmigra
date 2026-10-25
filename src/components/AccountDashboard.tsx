@@ -8,6 +8,7 @@ import {
 } from '../types';
 import CambiarPlan from './CambiarPlan';
 import PlanSelector from './PlanSelector';
+import ProfilePhotoMenu from '../ui/ProfilePhotoMenu';
 
 interface AccountDashboardProps {
   user: User;
@@ -94,13 +95,16 @@ const AccountDashboard: React.FC<AccountDashboardProps> = ({
             <p className="mt-1 text-sm text-neutral-500">{user.email}</p>
           </div>
 
-          <button
-            type="button"
-            onClick={onLogout}
-            className="rounded-xl border border-neutral-300 px-4 py-2 text-sm font-semibold hover:bg-neutral-50"
-          >
-            Cerrar sesión
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <ProfilePhotoMenu position="account" onAccount={() => undefined} />
+            <button
+              type="button"
+              onClick={onLogout}
+              className="rounded-xl border border-neutral-300 px-4 py-2 text-sm font-semibold hover:bg-neutral-50"
+            >
+              Cerrar sesión
+            </button>
+          </div>
         </header>
 
         <PlanSelector
