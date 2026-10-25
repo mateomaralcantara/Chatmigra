@@ -456,6 +456,70 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }),
     });
 
+    // Vercel Node response: stream incremental Gemini SSE tokens to the
+    // authenticated Tutor without ever exposing the Google API key.
+    if (streaming && googleResponse.ok && googleResponse.body && res.write && res.end) {
+      res.setHeader?.('Content-Type', 'application/x-ndjson; charset=utf-8');
+      res.setHeader?.('X-Content-Type-Options', 'nosniff');
+      res.setHeader?.('Cache-Control', 'no-cache, no-store, no-transform');
+      res.flushHeaders?.();
+      let output = '';
+      let finishReason = '';
+      let observedTokens = 0;
+      let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+      const emit = (event: Record<string, unknown>) => res.write?.(JSON.stringify(event) + '\n');
+      try {
+        reader = googleResponse.body.getReader();
+        const decoder = new TextDecoder();
+        let pending = '';
+        const processLine = (line: string) => {
+          if (!line.startsWith('data: ')) return;
+          let piece: any;
+          try { piece = JSON.parse(line.slice(6)); } catch { return; }
+          const candidate = piece?.candidates?.[0];
+          const delta: string = Array.isArray(candidate?.content?.parts)
+            ? candidate.content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('')
+            : '';
+          if (delta) {
+            output += delta;
+            emit({ type: 'delta', text: delta });
+          }
+          if (typeof candidate?.finishReason === 'string') finishReason = candidate.finishReason;
+          if (Number.isFinite(piece?.usageMetadata?.totalTokenCount)) {
+            observedTokens = Math.max(observedTokens, piece.usageMetadata.totalTokenCount);
+          }
+        };
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          pending += decoder.decode(value, { stream: true });
+          let split: number;
+          while ((split = pending.indexOf('\n')) >= 0) {
+            const line = pending.slice(0, split).trimEnd();
+            pending = pending.slice(split + 1);
+            processLine(line);
+          }
+        }
+        pending += decoder.decode();
+        if (pending.trim()) processLine(pending.trim());
+        tokensToFinalize = observedTokens;
+        const remaining = reservationId ? await finalizeQuota(observedTokens) : null;
+        const complete = !!output.trim() && (!finishReason || finishReason === 'STOP');
+        emit({ type: 'done', complete, finishReason, textLength: output.length, quotaRemaining: remaining, sources });
+      } catch (streamError) {
+        console.error('[gemini] Streaming terminated:', streamError);
+        if (reservationId) {
+          try { await finalizeQuota(observedTokens || (output ? FREE_TOKENS_MAX : 0)); }
+          catch (quotaError) { console.error('[gemini] Streaming quota finalization failed:', quotaError); }
+        }
+        emit({ type: 'error', error: 'La generación se interrumpió. La respuesta mostrada puede estar incompleta.' });
+      } finally {
+        await reader?.cancel().catch(() => undefined);
+        res.end();
+      }
+      return;
+    }
+
     const raw = await googleResponse.text();
     let data: any;
 
@@ -508,6 +572,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         enforced: quotaEnforced,
         remaining,
       },
+      complete: data?.candidates?.[0]?.finishReason !== 'MAX_TOKENS',
+      finishReason: data?.candidates?.[0]?.finishReason || '',
       ...(caseProfile ? { sources } : {}),
     });
   } catch (error) {
