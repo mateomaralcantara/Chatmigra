@@ -458,6 +458,35 @@ export default function ApplicantTutorWorkspace() {
 
         {selectedCase ? (
           <div className="cm-case-tutor-content">
+            <nav className="cm-case-tutor-quicknav" aria-label="Secciones del expediente">
+              <a href="#tutor-conversacion">Conversar con Tutor IA</a>
+              <a href="#tutor-documentos">Documentos</a>
+              <a href="#tutor-seguimiento">Seguimiento</a>
+            </nav>
+            <div id="tutor-conversacion" className="cm-case-tutor-panel cm-case-tutor-chat">
+              <h2>Tutor de este expediente</h2>
+              <p className="cm-case-tutor-hint">Responde solo sobre este aplicante, el perfil y los documentos seleccionados. Si un dato no consta, lo indicará.</p>
+              <div className="cm-case-tutor-thread" aria-live="polite">
+                {hasOlderMessages && (
+                  <button type="button" disabled={busy} onClick={() => void loadOlderMessages()}>
+                    Cargar mensajes anteriores
+                  </button>
+                )}
+                {messages.map((msg, index) => (
+                  <div key={msg.id || index} className={'cm-case-tutor-message ' + (msg.role === 'model' ? 'is-tutor' : 'is-applicant')}>
+                    <strong>{msg.role === 'model' ? 'Tutor' : 'Pregunta'}</strong>
+                    <p>{msg.content}</p>
+                  </div>
+                ))}
+                {!messages.length && <p>Pregunta, por ejemplo: «¿Cuál es el nombre completo del aplicante?».</p>}
+              </div>
+              <form onSubmit={(e) => void askTutor(e)} className="cm-case-tutor-ask">
+                <textarea value={question} onChange={(e) => setQuestion(e.target.value)} rows={2}
+                  placeholder="Pregunta únicamente sobre este expediente..."
+                  aria-label="Pregunta al Tutor Personal del Aplicante" />
+                <button type="submit" disabled={busy || !question.trim()}>{busy ? 'Consultando…' : 'Preguntar al Tutor'}</button>
+              </form>
+            </div>
             <div className="cm-case-tutor-panel">
               <h2>{selectedCase.applicant_name}</h2>
               <p><strong>Nacionalidad:</strong> {selectedCase.nationality || 'Sin indicar'} · <strong>Destino:</strong> {selectedCase.destination || 'Sin indicar'} · <strong>Proceso:</strong> {selectedCase.visa_type || 'Sin indicar'}</p>
@@ -470,7 +499,7 @@ export default function ApplicantTutorWorkspace() {
               )}
             </div>
 
-            <div className="cm-case-tutor-panel">
+            <div id="tutor-documentos" className="cm-case-tutor-panel">
               <h2>Documentación del expediente</h2>
               <div className="cm-case-tutor-upload">
                 <select value={category} onChange={(e) => setCategory(e.target.value as Category)} aria-label="Categoría del documento">
@@ -501,7 +530,7 @@ export default function ApplicantTutorWorkspace() {
               </div>
             </div>
 
-            <ApplicantCaseTasks key={selectedCase.id} caseId={selectedCase.id} ownerId={selectedCase.owner_id} currentUserId={myId} />
+            <div id="tutor-seguimiento"><ApplicantCaseTasks key={selectedCase.id} caseId={selectedCase.id} ownerId={selectedCase.owner_id} currentUserId={myId} /></div>
 
             {selectedCase.owner_id === myId && (
               <details className="cm-case-tutor-panel">
@@ -526,30 +555,6 @@ export default function ApplicantTutorWorkspace() {
               </details>
             )}
 
-            <div className="cm-case-tutor-panel cm-case-tutor-chat">
-              <h2>Tutor de este expediente</h2>
-              <p className="cm-case-tutor-hint">Responde solo sobre este aplicante, el perfil y los documentos seleccionados. Si un dato no consta, lo indicará.</p>
-              <div className="cm-case-tutor-thread" aria-live="polite">
-                {hasOlderMessages && (
-                  <button type="button" disabled={busy} onClick={() => void loadOlderMessages()}>
-                    Cargar mensajes anteriores
-                  </button>
-                )}
-                {messages.map((msg, index) => (
-                  <div key={msg.id || index} className={'cm-case-tutor-message ' + (msg.role === 'model' ? 'is-tutor' : 'is-applicant')}>
-                    <strong>{msg.role === 'model' ? 'Tutor' : 'Pregunta'}</strong>
-                    <p>{msg.content}</p>
-                  </div>
-                ))}
-                {!messages.length && <p>Pregunta, por ejemplo: «¿Cuál es el nombre completo del aplicante?».</p>}
-              </div>
-              <form onSubmit={(e) => void askTutor(e)} className="cm-case-tutor-ask">
-                <textarea value={question} onChange={(e) => setQuestion(e.target.value)} rows={2}
-                  placeholder="Pregunta únicamente sobre este expediente..."
-                  aria-label="Pregunta al Tutor Personal del Aplicante" />
-                <button type="submit" disabled={busy || !question.trim()}>{busy ? 'Consultando…' : 'Preguntar al Tutor'}</button>
-              </form>
-            </div>
             <div className="cm-case-tutor-panel cm-case-tutor-danger">
               <h2>Gestión y privacidad del expediente</h2>
               <p>El expediente y su historial permanecen guardados al cerrar sesión. Cancelar una suscripción no elimina automáticamente estos datos.</p>
