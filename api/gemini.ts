@@ -22,6 +22,9 @@ interface ApiResponse {
   status(code: number): ApiResponse;
   json(body: unknown): void;
   setHeader?(name: string, value: string): void;
+  write?(chunk: string): boolean;
+  end?(): void;
+  flushHeaders?(): void;
 }
 
 interface QuotaReservation {
@@ -149,14 +152,15 @@ function systemInstruction(plan: string, hasExpediente: boolean, hasCase = false
   ].join('\n');
 }
 
-function outputTokenLimit(messages: ChatMessage[], hasExpediente: boolean): number {
-  const lastQuestion = [...messages].reverse().find((message) => message.role === 'user')?.content || '';
+function outputTokenLimit(messages: ChatMessage[], hasExpediente: boolean, plan = 'free'): number {
+  const lastQuestion = [...messages].reverse().find(message => message.role === 'user')?.content || '';
+  const wantsReview = /\b(analiza|an[aá]lisis|revisa|revisi[oó]n|eval[uú]a|informe|resumen|riesgos|faltantes|completo|detallad[oa]|profundiza|explica|detalles|compar[ae])\b/i.test(lastQuestion);
   if (hasExpediente) {
-    // Explicit full reviews require more output than a single factual extraction.
-    const wantsReview = /\b(analiza|an[aá]lisis|revisa|revisi[oó]n|eval[uú]a|informe|resumen|riesgos|faltantes|completo|detallad[oa])\b/i.test(lastQuestion);
-    return wantsReview ? 600 : 256;
+    // The old 256/600 token cap produced incomplete immigration reports.
+    // Free plans must also respect the 3,000-token total quota.
+    return plan === 'free' ? (wantsReview ? 1100 : 700) : (wantsReview ? 3072 : 1600);
   }
-  return /\b(detallad[oa]|explica|pasos|procedimiento|gu[ií]a|completo)\b/i.test(lastQuestion) ? 900 : 400;
+  return wantsReview ? (plan === 'free' ? 900 : 2048) : 700;
 }
 
 function estimateReservation(messages: ChatMessage[], hasExpediente: boolean): number {
@@ -397,10 +401,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ],
     }));
 
+    const streaming = Boolean(requestedCaseId && body.stream === true && res.write && res.end);
     const url =
       'https://generativelanguage.googleapis.com/v1beta/models/' +
       encodeURIComponent(TEXT_MODEL) +
-      ':generateContent';
+      (streaming ? ':streamGenerateContent?alt=sse' : ':generateContent');
 
     const googleResponse = await fetch(url, {
       method: 'POST',
@@ -411,7 +416,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         },
         contents,
         generationConfig: {
-          maxOutputTokens: outputTokenLimit(messages, Boolean(attachment || caseProfile)),
+          maxOutputTokens: outputTokenLimit(messages, Boolean(attachment || caseProfile), effectivePlan),
         },
       }),
     });
