@@ -219,7 +219,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
               <>
                 {title && (
                   <h2
-                    className="text-xl sm:text-2xl font-extrabold italic tracking-wide"
+                    className="cm-answer-title text-xl sm:text-2xl font-extrabold italic tracking-wide"
                     style={{
                       color: '#000000', // negro sólido para el título
                       position: 'relative',
@@ -231,21 +231,21 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                 )}
 
                 {bodyVisible && (
-                  <div className="whitespace-pre-wrap leading-relaxed text-base sm:text-lg font-semibold text-black">
+                  <div className="cm-answer-body whitespace-pre-wrap leading-relaxed text-base sm:text-lg font-semibold text-black">
                     {bodyVisible}
                   </div>
                 )}
 
                 {/* Fallback por si algo sale raro */}
                 {!title && !bodyVisible && (
-                  <div className="whitespace-pre-wrap leading-relaxed text-base sm:text-lg font-semibold text-black">
+                  <div className="cm-answer-body whitespace-pre-wrap leading-relaxed text-base sm:text-lg font-semibold text-black">
                     {fallbackVisible}
                   </div>
                 )}
               </>
             ) : (
               // Mensajes del usuario (también sin ### ni ** ni bloques JSON)
-              <div className="whitespace-pre-wrap leading-relaxed text-base sm:text-lg font-semibold">
+              <div className="cm-user-paragraph whitespace-pre-wrap leading-relaxed text-base sm:text-lg font-semibold">
                 {userVisible}
               </div>
             )}
