@@ -51,7 +51,7 @@ function normalizeMessages(input: unknown): ChatMessage[] {
       (item): item is Record<string, unknown> =>
         !!item && typeof item === 'object',
     )
-    .map((item) => ({
+    .map((item): ChatMessage => ({
       role: item.role === 'model' ? 'model' : 'user',
       content: typeof item.content === 'string' ? item.content.trim() : '',
     }))
