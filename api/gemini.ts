@@ -251,11 +251,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (!googleResponse.ok) {
       if (reservationId) await finalizeQuota(0);
 
-      console.error('[gemini] Google API error', googleResponse.status, data);
+      console.error('[gemini] Google API HTTP', googleResponse.status);
 
       return res.status(googleResponse.status).json({
-        error: data?.error?.message || 'Gemini request failed',
-        code: data?.error?.status || 'GEMINI_UPSTREAM_ERROR',
+        error: googleResponse.status === 403
+          ? 'Google ha rechazado el acceso a Gemini (HTTP 403). Comprueba el estado de la clave API en Google AI Studio.'
+          : 'Gemini no pudo completar la consulta (HTTP ' + googleResponse.status + ').',
+        code: 'GEMINI_UPSTREAM_ERROR',
       });
     }
 
@@ -301,7 +303,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     console.error('[gemini] Internal error:', error);
 
     return res.status(500).json({
-      error: error instanceof Error ? error.message : 'Internal error',
+      error: 'No se pudo completar la solicitud a ChatMi.',
       code: 'GEMINI_INTERNAL_ERROR',
     });
   }
