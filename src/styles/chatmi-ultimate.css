@@ -1239,3 +1239,40 @@ input {
     right: -8px;
   }
 }
+
+
+/* Mi cuenta: visible upload button, not just an avatar icon. */
+.cm-profile-wrap--account {
+  display: inline-grid;
+}
+.cm-profile-account-trigger {
+  min-height: 41px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 13px;
+  border: 1px solid var(--cm-accent);
+  border-radius: 12px;
+  background: var(--cm-accent-soft);
+  color: var(--cm-text);
+  font-size: 13px;
+  font-weight: 690;
+  cursor: pointer;
+}
+.cm-profile-account-trigger:hover {
+  background: var(--cm-soft-panel);
+}
+.cm-profile-account-trigger:focus-visible {
+  outline: 3px solid var(--cm-accent);
+  outline-offset: 2px;
+}
+.cm-profile-wrap--account .cm-profile-popover {
+  left: 0;
+  top: calc(100% + 10px);
+}
+@media (max-width: 520px) {
+  .cm-profile-wrap--account .cm-profile-popover {
+    left: 0;
+    width: min(300px, calc(100vw - 46px));
+  }
+}
