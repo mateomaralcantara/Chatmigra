@@ -249,3 +249,16 @@ test('tutor shows HTTP failures including gateway 413 instead of silent generic 
   assert.match(service, /console\.warn\('\[tutor-migratorio\] HTTP'/);
   assert.doesNotMatch(service, /console\.warn\([^;]*encoded/);
 });
+
+
+test('tutor answers direct questions using only requested facts, not long explanations', () => {
+  const api = read('api/gemini.ts');
+  assert.match(api, /responde EXCLUSIVAMENTE con el valor extraído del documento, en una sola línea/);
+  assert.match(api, /No añadas introducción, etiquetas, explicaciones/);
+  assert.match(api, /No consta en el expediente/);
+  assert.match(api, /como máximo cinco puntos breves/);
+  assert.doesNotMatch(api, /Prepara un informe con: resumen del documento/);
+  assert.match(api, /maxOutputTokens: outputTokenLimit\(messages, Boolean\(attachment\)\)/);
+  assert.match(api, /return wantsReview \? 600 : 256/);
+  assert.match(api, /pregunta por UN dato/);
+});
