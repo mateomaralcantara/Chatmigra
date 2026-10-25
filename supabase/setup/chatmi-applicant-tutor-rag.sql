@@ -34,6 +34,23 @@ create policy applicant_rag_read_authorized on public.applicant_case_document_ch
    )
  );
 
+-- Limit duplicate indexing calls: attempts are created only by the trusted backend.
+create table if not exists public.applicant_case_index_jobs (
+ document_id uuid primary key references public.applicant_case_documents(id) on delete cascade,
+ case_id uuid not null references public.applicant_cases(id) on delete cascade,
+ status text not null default 'processing' check(status in ('processing','ready','failed')),
+ started_at timestamptz not null default now(),
+ completed_at timestamptz
+);
+alter table public.applicant_case_index_jobs enable row level security;
+revoke all on public.applicant_case_index_jobs from public,anon,authenticated;
+grant select on public.applicant_case_index_jobs to authenticated;
+grant all on public.applicant_case_index_jobs to service_role;
+drop policy if exists applicant_rag_jobs_read on public.applicant_case_index_jobs;
+create policy applicant_rag_jobs_read on public.applicant_case_index_jobs
+ for select to authenticated
+ using (exists (select 1 from public.applicant_cases c where c.id=case_id));
+
 -- SECURITY INVOKER, not definer: the user JWT and case RLS constrain results.
 create or replace function public.search_applicant_case_chunks(
  p_case_id uuid, p_document_ids uuid[], p_query text, p_limit integer default 8
