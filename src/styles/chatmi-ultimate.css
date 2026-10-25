@@ -1368,3 +1368,51 @@ input {
     font-size: 11px;
   }
 }
+
+
+/* Tutor action remains visible even before a file is selected. */
+.cm-expediente-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 7px 8px 0;
+}
+.cm-expediente-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--cm-border);
+  border-radius: 999px;
+  background: var(--cm-panel);
+  color: var(--cm-accent);
+  font-size: 12px;
+  font-weight: 720;
+  cursor: pointer;
+}
+.cm-expediente-open:hover {
+  background: var(--cm-accent-soft);
+}
+.cm-expediente-open:focus-visible {
+  outline: 2px solid var(--cm-accent);
+  outline-offset: 2px;
+}
+.cm-expediente-open:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+.cm-expediente-open-detail {
+  color: var(--cm-secondary);
+  font-weight: 500;
+}
+.cm-expediente-open-formats {
+  color: var(--cm-secondary);
+  font-size: 11px;
+}
+@media (max-width: 560px) {
+  .cm-expediente-open-formats {
+    display: none;
+  }
+}
