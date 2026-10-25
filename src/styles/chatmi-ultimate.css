@@ -1025,3 +1025,51 @@ input {
     gap: 5px;
   }
 }
+
+
+/* LEGIBILIDAD EDITORIAL: textos de conversación justificados y títulos grandes.
+   Solo contenido extenso: los rótulos de botones, chips y navegación no se justifican. */
+.cm-reference-shell .cm-chat-thread .cm-answer-body,
+.cm-reference-shell .cm-chat-thread .cm-user-paragraph,
+.cm-reference-shell .cm-dashboard-view article p {
+  text-align: justify;
+  text-justify: inter-word;
+  hyphens: auto;
+  overflow-wrap: anywhere;
+  line-height: 1.75;
+}
+.cm-reference-shell .cm-chat-thread .cm-answer-body {
+  font-size: clamp(16px, 1.3vw, 19px);
+  font-weight: 470;
+  color: var(--cm-text) !important;
+}
+.cm-reference-shell .cm-chat-thread .cm-user-paragraph {
+  color: var(--cm-text);
+}
+.cm-reference-shell .cm-chat-thread [data-role="assistant"] .cm-answer-title {
+  font-size: clamp(25px, 2.6vw, 35px) !important;
+  line-height: 1.23 !important;
+  font-weight: 780 !important;
+  letter-spacing: -.035em !important;
+  margin: 5px 0 16px !important;
+  color: var(--cm-text) !important;
+  text-align: left;
+}
+.cm-reference-shell .cm-home-title {
+  font-size: clamp(32px, 3.7vw, 48px);
+  line-height: 1.13;
+}
+.cm-reference-shell .cm-dashboard-view h1 {
+  font-size: clamp(30px, 3vw, 40px);
+  line-height: 1.2;
+}
+.cm-reference-shell .cm-dashboard-view h2 {
+  font-size: clamp(22px, 2vw, 29px);
+  line-height: 1.25;
+}
+@media (max-width: 560px) {
+  .cm-reference-shell .cm-chat-thread .cm-answer-body,
+  .cm-reference-shell .cm-chat-thread .cm-user-paragraph {
+    line-height: 1.6;
+  }
+}
