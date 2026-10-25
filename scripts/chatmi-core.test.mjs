@@ -259,7 +259,7 @@ test('tutor streams full authenticated answers and flags incomplete generations'
   assert.match(api, /type: 'delta'/);
   assert.match(api, /type: 'done'/);
   assert.match(api, /finishReason === 'STOP'/);
-  assert.match(api, /await finalizeQuota\(observedTokens\)/);
+  assert.match(api, /await finalizeQuota\(tokensToFinalize\)/);
   assert.match(api, /Promise\.all\(docs\.map\(async \(doc\)/);
   assert.match(api, /thinkingLevel: 'low'/);
   assert.match(api, /quickCaseFact\(lastQuestion, applicantCase\)/);
