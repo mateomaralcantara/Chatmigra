@@ -91,3 +91,12 @@ test('ChatMi uses a supported Gemini 3.8 Flash text model by default', () => {
   assert.match(example, /GEMINI_TEXT_MODEL=gemini-3\.8-flash/);
   assert.doesNotMatch(api, /temperature:\s*0\.35/);
 });
+
+test('API responses do not reveal raw upstream Google errors or key identifiers', () => {
+  for (const path of ['api/gemini.ts', 'api/gemini-ephemeral-token.ts']) {
+    const code = read(path);
+    assert.doesNotMatch(code, /error: data\?\.error\?\.message/);
+    assert.doesNotMatch(code, /console\.error\('\[gemini\]'[^;]*data\)/);
+    assert.match(code, /GEMINI_.*ERROR/);
+  }
+});
