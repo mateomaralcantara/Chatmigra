@@ -163,6 +163,7 @@ export default function ApplicantTutorChat() {
     if (!caseId || !files.length || busyRef.current) return;
     busyRef.current = true; setLoading(true); setError(''); setNotice('');
     let saved = 0;
+    const newlyAdded: string[] = [];
     try {
       const user = await loggedInUser();
       for (const file of files) {
@@ -174,17 +175,21 @@ export default function ApplicantTutorChat() {
         const store = supabase.storage.from(BUCKET);
         const { error: uploadError } = await store.upload(path, file, { contentType: file.type, upsert: false });
         if (uploadError) throw new Error('No se pudo guardar un documento en el almacenamiento privado.');
-        const { error: insertError } = await supabase.from('applicant_case_documents').insert({
+        const { data: inserted, error: insertError } = await supabase.from('applicant_case_documents').insert({
           case_id: caseId, uploaded_by: user.id, filename: file.name.slice(0, 180),
           mime_type: file.type, size_bytes: file.size, storage_path: path, category: 'otro',
-        });
+        }).select('id').single();
         if (insertError) {
           await store.remove([path]);
           throw new Error('El archivo se cargó pero no pudo registrarse en el expediente.');
         }
         saved++;
+        if (inserted?.id) newlyAdded.push(String(inserted.id));
       }
       await refreshCase(caseId);
+      if (newlyAdded.length) setSelectedDocs(previous => [
+        ...newlyAdded.slice(-4), ...previous.filter(id => !newlyAdded.includes(id)),
+      ].slice(0, 4));
       setNotice(saved + ' documento(s) guardado(s) en el expediente.');
     } catch (e) {
       setError((e instanceof Error ? e.message : 'No se pudo subir el documento.') +
@@ -235,7 +240,7 @@ export default function ApplicantTutorChat() {
         speech.onend = () => {
           setSpeaking(false);
           if (voiceOnRef.current && activeCaseRef.current === queriedCase) {
-            try { recognitionRef.current?.start(); } catch { setError('Pulsa el micrófono para continuar.'); }
+            try { recognitionRef.current?.start(); setListening(true); } catch { setError('Pulsa el micrófono para continuar.'); }
           }
         };
         speech.onerror = () => { setSpeaking(false); voiceOnRef.current = false; setVoiceOn(false); };
