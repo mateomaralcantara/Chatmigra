@@ -142,3 +142,29 @@ test('long chat paragraphs are justified and response headings are large', () =>
   assert.match(styles, /font-size:\s*clamp\(25px, 2\.6vw, 35px\)\s*!important/);
   assert.match(styles, /\.cm-home-title\s*\{\s*font-size:\s*clamp\(32px, 3\.7vw, 48px\)/);
 });
+
+
+test('profile upload appears in both avatar buttons with authenticated storage', () => {
+  const shell = read('src/ui/PremiumShell.tsx');
+  const profile = read('src/ui/ProfilePhotoMenu.tsx');
+  const sql = read('supabase/setup/chatmi-avatar-storage.sql');
+
+  assert.match(shell, /<ProfilePhotoMenu position="rail"/);
+  assert.match(shell, /<ProfilePhotoMenu position="top"/);
+  assert.match(profile, /Subir foto \(Upload\)/);
+  assert.match(profile, /Guardar foto/);
+  assert.match(profile, /supabase\.auth\.getUser\(\)/);
+  assert.match(profile, /supabase\.auth\.updateUser\(/);
+  assert.match(profile, /storage\.upload\(path, file,/);
+  assert.match(profile, /const MAX_PHOTO_SIZE = 2 \* 1024 \* 1024/);
+  assert.match(profile, /contentType: file\.type/);
+  assert.match(profile, /upsert: false/);
+  assert.doesNotMatch(profile, /SERVICE_ROLE_KEY/);
+
+  assert.match(sql, /insert into storage\.buckets/);
+  assert.match(sql, /file_size_limit/);
+  assert.match(sql, /for insert\s+to authenticated/);
+  assert.match(sql, /for delete\s+to authenticated/);
+  assert.match(sql, /storage\.foldername\(name\)\)\[1\] = \(select auth\.uid\(\)\)::text/);
+  assert.doesNotMatch(sql, /on storage\.objects\s+for (?:all|insert)\s+using\s*\(\s*true\s*\)/i);
+});
