@@ -550,7 +550,7 @@ export default function ApplicantTutorChat() {
                 : <p>{item.content}</p>}
             </div>
           )}
-          {loading && <p className="cm-tutor-chat-thinking" role="status">Revisando los documentos…</p>}
+          {loading && <p className="cm-tutor-chat-thinking" role="status">Consultando expediente y generando respuesta…</p>}
           <div ref={endRef} />
         </div>
       </div>
@@ -558,6 +558,11 @@ export default function ApplicantTutorChat() {
       <div className="cm-tutor-chat-bottom">
         {error && <p role="alert" className="cm-inline-error">{error}</p>}
         {notice && <p role="status" className="cm-tutor-chat-notice">{notice}</p>}
+        {replyIncomplete && !loading && (
+          <button type="button" className="cm-tutor-continue" onClick={() => void askQuestion('Continúa exactamente donde terminó tu última respuesta. Completa el análisis pendiente usando el mismo expediente, sin repetir lo ya explicado.', false)}>
+            Continuar respuesta
+          </button>
+        )}
         <div className="cm-tutor-documents-bar">
           <input ref={fileRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" className="cm-expediente-file-input" onChange={event => void uploadDocument(event)} disabled={!caseId || loading} aria-label="Subir documentos al expediente" />
           <button type="button" className="cm-tutor-upload" onClick={() => fileRef.current?.click()} disabled={!caseId || loading}>＋ Subir documentos</button>
