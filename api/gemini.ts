@@ -146,6 +146,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   let quotaAdmin: SupabaseClient | null = null;
   let reservationId: string | null = null;
+  let tokensToFinalize = 0;
   let quotaEnforced = false;
 
   // Users cannot call quota RPCs. The service key is server-only.
@@ -277,8 +278,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const actualTokens = Number(data?.usageMetadata?.totalTokenCount || 0);
+    tokensToFinalize = Number.isFinite(actualTokens) ? Math.max(0, actualTokens) : 0;
     const remaining = reservationId
-      ? await finalizeQuota(Number.isFinite(actualTokens) ? actualTokens : 0)
+      ? await finalizeQuota(tokensToFinalize)
       : null;
     return res.status(200).json({
       text,
@@ -292,7 +294,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     });
   } catch (error) {
     if (reservationId) {
-      try { await finalizeQuota(0); }
+      try { await finalizeQuota(tokensToFinalize); }
       catch (refundError) {
         console.error('[gemini] Could not release quota reservation:', refundError);
       }
