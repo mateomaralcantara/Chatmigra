@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { readServerEnv } from '../server/env';
 import {
   getAdminSupabase,
   requireAuthenticatedUser,
@@ -29,7 +30,7 @@ interface QuotaReservation {
   reservation_id?: string;
 }
 
-const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || 'gemini-3.8-flash';
+const TEXT_MODEL = readServerEnv('GEMINI_TEXT_MODEL') || 'gemini-3.8-flash';
 const FREE_TOKENS_MAX = 3000;
 const MAX_EXPEDIENTE_BYTES = 2 * 1024 * 1024;
 const EXPEDIENTE_MIMES = new Set([
@@ -186,7 +187,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   const apiKey = (
-    process.env.GEMINI_API_KEY ||
+    readServerEnv('GEMINI_API_KEY') ||
     ''
   ).trim();
   if (!apiKey) {
