@@ -173,6 +173,37 @@ export function createConsularQuestions(
   return {questions,alerts:evidence.alerts,included:evidence.included,excluded:evidence.excluded};
 }
 
+export const CONSULAR_FINISHED =
+  'Simulacro concluido. Revisa las diferencias documentales señaladas antes de tu entrevista.';
+
+/** Resume a question from private message history without repeating it at page load. */
+export function resumeConsularInterview(
+  history: {role:'user'|'model';content:string}[],
+  questions:PreparedQuestion[],
+): {index:number;attempts:number;pending:boolean;completed:boolean;started:boolean} {
+  const byQuestion = new Map(questions.map((item,index)=>[item.question,index]));
+  let index=0, attempts=0, pending=false, started=false, completed=false;
+  for(const message of history) {
+    if(message.role==='model' && message.content===CONSULAR_FINISHED) {
+      completed=true; pending=false; started=false; continue;
+    }
+    if(message.role==='model' && byQuestion.has(message.content)) {
+      const next=byQuestion.get(message.content)!;
+      if(started && next===index && !pending) attempts=Math.min(2,attempts+1);
+      else if(next!==index || !started) attempts=0;
+      index=next; started=true; pending=true; completed=false;
+    } else if(message.role==='user' && pending) {
+      pending=false;
+    }
+  }
+  if(started && !pending) {
+    index++;
+    attempts=0;
+    if(index>=questions.length) completed=true;
+  }
+  return {index,attempts,pending,completed,started};
+}
+
 export type InterviewGrade = {
   outcome:'correct'|'retry'|'review'|'clarify';
   feedback:string;
