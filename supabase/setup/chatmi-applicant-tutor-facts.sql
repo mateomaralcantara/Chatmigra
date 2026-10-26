@@ -11,7 +11,7 @@ create table if not exists public.applicant_case_facts (
   fact_value text not null check (char_length(trim(fact_value)) between 1 and 400),
   verification_status text not null default 'pending_review'
     check (verification_status in ('pending_review','verified','rejected')),
-  verified_by uuid references auth.users(id) on delete set null,
+  verified_by uuid references auth.users(id) on delete cascade,
   verified_at timestamptz,
   created_at timestamptz not null default now(),
   constraint applicant_case_facts_verification_consistency check (
