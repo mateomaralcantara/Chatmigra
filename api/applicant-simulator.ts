@@ -56,6 +56,9 @@ export default async function handler(req:Request,res:Response) {
     });
   }
   const generated=createConsularQuestions(String(caseRow.applicant_name),available);
+  if(!generated.included.length) return res.status(422).json({
+    error:'Ningún documento indexado coincide claramente con la identidad de este solicitante. Revisa la asignación de los archivos antes de entrenar.',
+  });
   const unindexed=pieces.filter(doc=>!doc.ready).map(doc=>doc.filename);
   return res.status(200).json({
     ...generated,
