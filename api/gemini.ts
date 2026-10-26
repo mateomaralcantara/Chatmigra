@@ -158,11 +158,13 @@ function systemInstruction(plan: string, hasExpediente: boolean, hasCase = false
 
 function outputTokenLimit(messages: ChatMessage[], hasExpediente: boolean, plan = 'free'): number {
   const lastQuestion = [...messages].reverse().find(message => message.role === 'user')?.content || '';
-  const wantsReview = /\b(analiza|an[aá]lisis|revisa|revisi[oó]n|eval[uú]a|informe|resumen|riesgos|faltantes|completo|detallad[oa]|profundiza|explica|detalles|compar[ae])\b/i.test(lastQuestion);
+  const wantsReview = /\b(analiza|an[aá]lisis|revisa|revisi[oó]n|eval[uú]a|informe|resumen|riesgos|faltantes|completo|detallad[oa]|profundiza|explica|detalles|compar[ae]|requisitos|procedimiento|pasos|documentaci[oó]n|historial)\b/i.test(lastQuestion);
   if (hasExpediente) {
     // The old 256/600 token cap produced incomplete immigration reports.
     // Free plans must also respect the 3,000-token total quota.
-    return plan === 'free' ? (wantsReview ? 1100 : 700) : (wantsReview ? 3072 : 1600);
+    // Keep detailed reviews complete, but bound everyday replies so the
+    // text reaches the user much sooner and never rambles unnecessarily.
+    return plan === 'free' ? (wantsReview ? 1100 : 640) : (wantsReview ? 3072 : 800);
   }
   return wantsReview ? (plan === 'free' ? 900 : 2048) : 700;
 }
