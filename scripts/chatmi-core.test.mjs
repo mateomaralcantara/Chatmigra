@@ -292,8 +292,8 @@ test('case voice waits for complete free questions and accepts brief interview r
   assert.match(tutor, /engine\.continuous = true/);
   assert.match(tutor, /engine\.interimResults = true/);
   assert.match(tutor, /const submitRecognizedQuestion/);
-  assert.match(tutor, /guidedRef\.current \|\| simulatorRef\.current/);
-  assert.match(tutor, /scheduleQuestion\(\(guidedRef\.current \|\| simulatorRef\.current\) \? 850 : 1400\)/);
+  assert.match(tutor, /simulatorRef\.current \? 1 : 3/);
+  assert.match(tutor, /scheduleQuestion\(simulatorRef\.current \? 850 : 1400\)/);
   assert.match(tutor, /voiceSessionRef\.current = phrase/);
   assert.match(tutor, /engine\.stop\(\)/);
   assert.match(tutor, /void askQuestion\(complete, true\)/);
@@ -567,19 +567,18 @@ test('guided Tutor starts the interview and automatically asks every next questi
   assert.equal(naturalSpanishSpeech('Nombre completo'), 'Nombre completo');
   assert.equal(interviewProgress([], {nationality:'',destination:'',visa_type:''}).nextQuestion, INTERVIEW.goal);
 
+  // Legacy intake questions remain parseable only for historical compatibility.
+  // They MUST NOT orchestrate new consular interview sessions.
   const tutor=read('src/components/ApplicantTutorChat.tsx');
-  assert.match(tutor, /const state = interviewProgress\(history, profile\)/);
-  assert.match(tutor, /const followUp = interviewProgress\(afterAnswer, activeProfile\)/);
-  assert.match(tutor, /if \(guidedRef\.current && state\.pending && state\.nextQuestion\)/);
-  assert.match(tutor, /readAnswerAloud\(interview\.nextQuestion, caseId\)/);
+  assert.match(tutor, /const progress=resumeConsularInterview\(history,payload\.questions\)/);
+  assert.match(tutor, /const grade=evaluateConsularAnswer/);
+  assert.match(tutor, /readAnswerAloud\(active\.questions\[active\.index\]\.question,caseId\)/);
   assert.match(tutor, /naturalSpanishSpeech\(answer\)/);
   assert.match(tutor, /getVoices\(\)/);
   assert.match(tutor, /utterance\.rate = 1\.12/);
-  assert.match(tutor, /850/);
-  assert.match(tutor, /Pausar entrevista/);
-  assert.match(tutor, /Reanudar entrevista/);
-  assert.match(tutor, /Entrevista dirigida por el agente/);
-  assert.match(tutor, /Guardar tu respuesta|Guardando tu respuesta/);
+  assert.doesNotMatch(tutor, /interviewProgress\(/);
+  assert.doesNotMatch(tutor, /INTERVIEW\.priority|guidedRef/);
+
 });
 
 test('19 consular modules generate source-grounded questions without mixing applicants', () => {
@@ -650,4 +649,52 @@ test('consular simulator is private, agent-led, handles corrections and never re
   assert.match(tutor,/simulatorRef\.current=nextRun/);
   assert.match(tutor,/readAnswerAloud\(feedback\+' '\+nextPrompt,activeId\)/);
   assert.match(tutor,/Simulacro consular \(19 módulos\)/);
+});
+
+test('Tutor opens consular interview automatically and resumes without legacy priority prompt',()=>{
+  const source=read('lib/tutor/consularSkills.ts');
+  const compiled=ts.transpileModule(source,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+  }).outputText;
+  const sandbox={module:{exports:{}}};
+  sandbox.exports=sandbox.module.exports;
+  vm.runInNewContext(compiled,sandbox);
+  const {CONSULAR_SKILLS,resumeConsularInterview,CONSULAR_FINISHED}=sandbox.module.exports;
+  const questions=CONSULAR_SKILLS.map(item=>({question:item.question}));
+  const empty=resumeConsularInterview([],questions);
+  assert.equal(empty.index,0);
+  assert.equal(empty.pending,false);
+  assert.equal(empty.started,false);
+  const oldHistory=[
+    {role:'model',content:'¿Qué aspecto de tu expediente te preocupa más?'},
+    {role:'user',content:'Los tiempos'},
+  ];
+  assert.equal(resumeConsularInterview(oldHistory,questions).index,0);
+  const withQuestion=[...oldHistory,{role:'model',content:questions[0].question}];
+  const onReload=resumeConsularInterview(withQuestion,questions);
+  assert.equal(onReload.index,0);
+  assert.equal(onReload.pending,true);
+  assert.equal(onReload.started,true);
+  const afterFirst=[...withQuestion,{role:'user',content:'ANA EJEMPLO'}];
+  const next=resumeConsularInterview(afterFirst,questions);
+  assert.equal(next.index,1);
+  assert.equal(next.pending,false);
+  const repeated=[...afterFirst,{role:'model',content:questions[0].question}];
+  assert.equal(resumeConsularInterview(repeated,questions).pending,true);
+  const complete=resumeConsularInterview([
+    ...afterFirst,{role:'model',content:CONSULAR_FINISHED},
+  ],questions);
+  assert.equal(complete.completed,true);
+  const ui=read('src/components/ApplicantTutorChat.tsx');
+  const autoStart=ui.slice(ui.indexOf('const refreshCase ='),ui.indexOf('useEffect(() => {\n    const openVoice'));
+  assert.match(autoStart,/startingSimulatorCasesRef\.current\.add\(id\)/);
+  assert.match(autoStart,/fetch\('\/api\/applicant-simulator'/);
+  assert.match(autoStart,/resumeConsularInterview\(history,payload\.questions\)/);
+  assert.match(autoStart,/if\(progress\.pending\)/);
+  assert.match(autoStart,/if\(!readyJobs\?\.length\)/);
+  assert.match(autoStart,/setMessages\(\[\.\.\.history,\{role:'model',content:prompt\}\]\)/);
+  assert.doesNotMatch(autoStart,/interviewProgress/);
+  assert.doesNotMatch(autoStart,/state\.nextQuestion/);
+  assert.match(ui,/Pausar simulacro/);
+  assert.match(ui,/Iniciar simulacro/);
 });
