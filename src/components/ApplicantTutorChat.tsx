@@ -3,8 +3,10 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { supabase } from '../services/supabaseClient';
 import { interviewProgress, INTERVIEW_COMPLETE, naturalSpanishSpeech } from '../../lib/tutor/interview';
+import { evaluateConsularAnswer, type PreparedQuestion } from '../../lib/tutor/consularSkills';
 
 type CaseRow = { id: string; applicant_name: string; owner_id: string; nationality: string; destination: string; visa_type: string };
+type SimulatorRun = { questions: PreparedQuestion[]; index:number; attempts:number; alerts:string[]; unindexed:string[] };
 type FactRow = { id:string; fact_key:string; fact_value:string; document_id:string|null; verification_status:'pending_review'|'verified'|'rejected' };
 type DocRow = { id: string; filename: string; mime_type: string; storage_path: string; created_at: string };
 type MessageRow = { id?: string; role: 'user' | 'model'; content: string; created_at?: string };
@@ -78,6 +80,7 @@ function exactFactReply(question: string, response: string): string {
 export default function ApplicantTutorChat() {
   const [mode, setMode] = useState<Mode>('chat');
   const [guided, setGuided] = useState(true);
+  const [simulator, setSimulator] = useState<SimulatorRun | null>(null);
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [caseId, setCaseId] = useState(currentCaseId);
   const [docs, setDocs] = useState<DocRow[]>([]);
@@ -108,6 +111,7 @@ export default function ApplicantTutorChat() {
   const activeCaseRef = useRef(caseId);
   const messagesRef = useRef<MessageRow[]>([]);
   const guidedRef = useRef(true);
+  const simulatorRef = useRef<SimulatorRun | null>(null);
   const caseProfilesRef = useRef<CaseRow[]>([]);
   const loggedUserRef = useRef('');
   const mountedRef = useRef(true);
@@ -214,6 +218,7 @@ export default function ApplicantTutorChat() {
     activeCaseRef.current = caseId;
     setError(''); setNotice(''); setTranscript('');
     guidedRef.current = true; setGuided(true);
+    simulatorRef.current = null; setSimulator(null);
     setDocs([]); setFacts([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false);
     voiceOnRef.current = false; setVoiceOn(false);
     voiceSessionRef.current = '';
@@ -330,6 +335,57 @@ export default function ApplicantTutorChat() {
     }
   };
 
+  const startSimulator = async () => {
+    if(!caseId || !selectedDocs.length || loading || busyRef.current) return;
+    const currentCase=caseId;
+    busyRef.current=true;setLoading(true);setError('');setNotice('');
+    try {
+      const {data:{session}}=await supabase.auth.getSession();
+      if(!session?.access_token)throw new Error('Sesión expirada. Inicia sesión.');
+      const response=await fetch('/api/applicant-simulator',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},
+        body:JSON.stringify({caseId:currentCase,documentIds:selectedDocs}),
+      });
+      const payload: {
+        error?:string;questions?:PreparedQuestion[];
+        alerts?:string[];excluded?:string[];unindexed?:string[];
+      }=await response.json().catch(()=>({}));
+      if(!response.ok || !payload.questions?.length)
+        throw new Error(payload.error || 'No se pudo preparar el simulacro.');
+      if(activeCaseRef.current!==currentCase)return;
+      stopVoice();
+      guidedRef.current=false;setGuided(false);
+      const run:SimulatorRun={
+        questions:payload.questions,index:0,attempts:0,
+        alerts:payload.alerts||[],unindexed:payload.unindexed||[],
+      };
+      simulatorRef.current=run;setSimulator(run);
+      const prompt=run.questions[0].question;
+      const snapshot=[...messagesRef.current];
+      setMessages([...snapshot,{role:'model',content:prompt}]);
+      const user=await loggedInUser();
+      const {error:saveError}=await supabase.from('applicant_case_messages').insert({
+        case_id:currentCase,created_by:user.id,role:'model',content:prompt,
+      });
+      if(saveError)throw new Error('No se pudo guardar la primera pregunta del simulacro.');
+      setNotice('Simulacro activo: '+run.questions.length+
+        ' módulos. '+(run.alerts.length?
+        'Atención: '+run.alerts[0]:'El agente te preguntará y corregirá las respuestas.'));
+      if(run.unindexed.length)setNotice(previous=>previous+' Algunos documentos aún no están indexados.');
+    }catch(err){
+      if(activeCaseRef.current===currentCase) {
+        simulatorRef.current=null;setSimulator(null);
+        setError(err instanceof Error?err.message:'Error preparando el simulacro.');
+      }
+    }finally{busyRef.current=false;if(mountedRef.current)setLoading(false);}
+  };
+
+  const stopSimulator = () => {
+    stopVoice();
+    simulatorRef.current=null;setSimulator(null);setNotice('Simulacro detenido.');
+  };
+
   // Short speech utterances are chained to avoid browsers truncating long answers.
   const readAnswerAloud = (answer: string, forCase: string) => {
     if (!window.speechSynthesis || !voiceOnRef.current) return;
@@ -354,7 +410,7 @@ export default function ApplicantTutorChat() {
         setSpeaking(false);
         // When the guided interview finishes and there is no document for
         // free questions, do not leave the microphone listening indefinitely.
-        if (!guidedRef.current && !selectedDocs.length) {
+        if (!guidedRef.current && !simulatorRef.current && !selectedDocs.length) {
           stopVoice();
           return;
         }
@@ -380,6 +436,58 @@ export default function ApplicantTutorChat() {
   const askQuestion = async (rawText: string, spoken: boolean): Promise<void> => {
     const text = rawText.trim();
     if (!text || !caseId || busyRef.current) return;
+    // Consular simulator: assess only against case-specific indexed evidence.
+    // No Gemini calls for corrections and repetitions.
+    if(simulatorRef.current) {
+      const currentRun=simulatorRef.current;
+      const item=currentRun.questions[currentRun.index];
+      if(!item)return;
+      busyRef.current=true;setLoading(true);setError('');
+      const activeId=caseId;
+      const snapshot=[...messagesRef.current];
+      const grade=evaluateConsularAnswer(item,text,currentRun.attempts);
+      const nextAttempt=grade.repeat && currentRun.attempts<2;
+      const nextIndex=nextAttempt?currentRun.index:currentRun.index+1;
+      const nextItem=currentRun.questions[nextIndex];
+      const nextPrompt=nextItem?.question || 'Simulacro concluido. Revisa las diferencias documentales señaladas antes de tu entrevista.';
+      const feedback=grade.feedback;
+      const append:MessageRow[]=[
+        {role:'user',content:text},
+        {role:'model',content:feedback},
+        {role:'model',content:nextPrompt},
+      ];
+      const nextRun:SimulatorRun={
+        ...currentRun,index:nextIndex,attempts:nextAttempt?currentRun.attempts+1:0,
+      };
+      setMessages([...snapshot,...append]);
+      try {
+        const user=await loggedInUser();
+        const now=Date.now();
+        const {error:saveError}=await supabase.from('applicant_case_messages').insert(
+          append.map((message,i)=>({
+            case_id:activeId,created_by:user.id,
+            role:message.role,content:message.content.slice(0,15000),
+            created_at:new Date(now+i).toISOString(),
+          }))
+        );
+        if(saveError)throw new Error('No se pudo guardar la evaluación.');
+        if(mountedRef.current && activeCaseRef.current===activeId) {
+          setQuestion('');
+          if(nextItem) {
+            simulatorRef.current=nextRun;setSimulator(nextRun);
+          } else {
+            simulatorRef.current=null;setSimulator(null);
+          }
+          if(spoken&&voiceOnRef.current)readAnswerAloud(feedback+' '+nextPrompt,activeId);
+        }
+      }catch(err){
+        if(activeCaseRef.current===activeId){
+          setMessages(snapshot);
+          setError(err instanceof Error?err.message:'Error guardando evaluación.');
+        }
+      }finally{busyRef.current=false;if(mountedRef.current)setLoading(false);}
+      return;
+    }
     // Guided mode is local-first: an answer triggers the next agent question
     // instantly, without Gemini, PDFs, a server roundtrip, or a 3-word limit.
     const activeProfile = caseProfilesRef.current.find(item => item.id === caseId) || {};
@@ -563,7 +671,7 @@ export default function ApplicantTutorChat() {
       voiceDelayRef.current = null;
       if (!voiceOnRef.current || busyRef.current) return;
       const complete = composedText();
-      if (complete.split(/\s+/).filter(Boolean).length < (guidedRef.current ? 1 : 3)) {
+      if (complete.split(/\s+/).filter(Boolean).length < (guidedRef.current || simulatorRef.current ? 1 : 3)) {
         setError('No pude escuchar tu respuesta completa. Repítela.');
         return;
       }
@@ -592,10 +700,10 @@ export default function ApplicantTutorChat() {
       setTranscript(full);
       const words = full.split(/\s+/).filter(Boolean).length;
       const finalPart = entries.some(entry => entry.isFinal !== false);
-      if (finalPart && words >= (guidedRef.current ? 1 : 3)) {
+      if (finalPart && words >= ((guidedRef.current || simulatorRef.current) ? 1 : 3)) {
         setError('');
         // Wait for further words rather than sending the first detected fragment.
-        scheduleQuestion(guidedRef.current ? 850 : 1400);
+        scheduleQuestion((guidedRef.current || simulatorRef.current) ? 850 : 1400);
       } else if (voiceDelayRef.current) {
         clearTimeout(voiceDelayRef.current);
         voiceDelayRef.current = null;
@@ -618,7 +726,7 @@ export default function ApplicantTutorChat() {
       if (!voiceOnRef.current || busyRef.current) return;
       if (voiceDelayRef.current) return;
       const phrase = composedText();
-      if (phrase.split(/\s+/).filter(Boolean).length >= (guidedRef.current ? 1 : 3)) {
+      if (phrase.split(/\s+/).filter(Boolean).length >= ((guidedRef.current || simulatorRef.current) ? 1 : 3)) {
         scheduleQuestion(450);
         return;
       }
@@ -652,9 +760,11 @@ export default function ApplicantTutorChat() {
     try {
       const profile = caseProfilesRef.current.find(item => item.id === caseId) || {};
       const interview = interviewProgress(messagesRef.current, profile);
-      if (guidedRef.current && interview.pending && interview.nextQuestion) {
-        // Browser speech may only start on a user gesture. This click is that
-        // gesture: ask aloud first; microphone resumes when speech finishes.
+      if (simulatorRef.current) {
+        const active = simulatorRef.current;
+        readAnswerAloud(active.questions[active.index].question,caseId);
+      } else if (guidedRef.current && interview.pending && interview.nextQuestion) {
+        // Browser speech may only start on a user gesture.
         readAnswerAloud(interview.nextQuestion, caseId);
       } else {
         engine.start(); setListening(true);
@@ -668,6 +778,7 @@ export default function ApplicantTutorChat() {
   const toggleGuidedInterview = () => {
     if (busyRef.current || loading || !caseId) return;
     stopVoice();
+    if(simulatorRef.current){simulatorRef.current=null;setSimulator(null);}
     const next = !guidedRef.current;
     guidedRef.current = next;
     setGuided(next);
@@ -809,7 +920,9 @@ export default function ApplicantTutorChat() {
 
       <div className="cm-tutor-chat-bottom">
         <div className="cm-tutor-interview-bar">
-          <span>{guided ? 'Entrevista dirigida por el agente · respuestas rápidas' : 'Consulta libre del expediente'}</span>
+          <span>{simulator ? ('Simulacro consular · módulo '+(simulator.index+1)+'/'+simulator.questions.length+
+            ' · '+simulator.questions[simulator.index]?.title)
+            : guided ? 'Entrevista dirigida por el agente · respuestas rápidas' : 'Consulta libre del expediente'}</span>
           <button type="button" disabled={!caseId || loading}
             onClick={toggleGuidedInterview}>
             {guided ? 'Pausar entrevista' : 'Reanudar entrevista'}
@@ -825,6 +938,12 @@ export default function ApplicantTutorChat() {
         <div className="cm-tutor-documents-bar">
           <input ref={fileRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" className="cm-expediente-file-input" onChange={event => void uploadDocument(event)} disabled={!caseId || loading} aria-label="Subir documentos al expediente" />
           <button type="button" className="cm-tutor-upload" onClick={() => fileRef.current?.click()} disabled={!caseId || loading}>＋ Subir documentos</button>
+          <button type="button" className="cm-tutor-upload" onClick={() => void startSimulator()}
+            disabled={!caseId || !selectedDocs.length || loading || Boolean(simulator)}>
+            🎓 Simulacro consular (19 módulos)
+          </button>
+          {simulator && <button type="button" className="cm-tutor-upload"
+            onClick={stopSimulator}>Terminar simulacro</button>}
           <button type="button" className="cm-tutor-upload" onClick={() => void prepareFastSearch()}
             disabled={!caseId || loading || selectedDocs.every(id => indexedIds.includes(id) && facts.some(f=>f.document_id===id)) || !selectedDocs.length}
             title="Prepara una vez los documentos seleccionados para responder más rápido">
@@ -870,17 +989,17 @@ export default function ApplicantTutorChat() {
             <textarea aria-label={guided ? 'Responder al Tutor' : 'Preguntar sobre los documentos'} rows={1} value={question} disabled={!caseId || loading}
               onChange={event => setQuestion(event.target.value)}
               onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if (question.trim()) void askQuestion(question, false); } }}
-              placeholder={guided ? 'Responde la pregunta del Tutor…' : 'Pregunta sobre los documentos del expediente…'} />
+              placeholder={guided || simulator ? 'Responde la pregunta del Tutor…' : 'Pregunta sobre los documentos del expediente…'} />
             <div className="cm-composer-actions">
-              <span className="cm-model-chip">{guided ? 'Respuesta rápida' : 'Gemini / RAG'}</span>
+              <span className="cm-model-chip">{simulator ? 'Evaluación + repregunta' : guided ? 'Respuesta rápida' : 'Gemini / RAG'}</span>
               <button type="button" className="cm-composer-mic" aria-label="Ir a Voz" title="Conversación por voz" onClick={() => switchMode('voice')}>♫</button>
-              <button type="submit" className="cm-composer-send" aria-label="Enviar respuesta" disabled={loading || !question.trim() || (!guided && !selectedDocs.length)}>↑</button>
+              <button type="submit" className="cm-composer-send" aria-label="Enviar respuesta" disabled={loading || !question.trim() || (!guided && !simulator && !selectedDocs.length)}>↑</button>
             </div>
           </form>
         ) : (
           <div className="cm-tutor-voice-panel">
             <button type="button" className={'cm-tutor-voice-button ' + (listening ? 'is-listening' : '')} aria-pressed={voiceOn}
-              onClick={toggleVoice} disabled={!caseId || (!guided && !selectedDocs.length) || loading}>
+              onClick={toggleVoice} disabled={!caseId || (!guided && !simulator && !selectedDocs.length) || loading}>
               {voiceOn ? '■ Detener voz' : '🎙 Iniciar voz'}
             </button>
             <div aria-live="polite">
