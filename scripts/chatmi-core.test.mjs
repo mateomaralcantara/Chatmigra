@@ -757,6 +757,8 @@ test('consular Tutor understands conversational summaries instead of requiring w
   good('dates','23 SEPTEMBER 2026','23 de septiembre','date');
   good('birth','21 MARCH 1983','21 de marzo de 1983','date');
   good('occupation','JOURNALIST','Soy periodista','exact');
+  assert.equal(grade('occupation','JOURNALIST','Soy periodista','exact').outcome,'correct');
+  assert.equal(grade('passport','RD999000','Mi pasaporte es RD999000','exact').outcome,'correct');
   good('funding','SELF','Yo','exact');
   good('history','NO','No','yesno');
   good('family',null,'No tengo familiares');
@@ -769,6 +771,8 @@ test('consular Tutor understands conversational summaries instead of requiring w
   assert.equal(grade('residence','Santo Domingo','Vivo en Santiago').outcome,'retry');
   assert.equal(grade('occupation','JOURNALIST','Soy abogado','exact').outcome,'retry');
   assert.equal(grade('purpose','FOREIGN MEDIA REPRESENTATIVE (I)','Voy de vacaciones','explanation').outcome,'retry');
+  assert.equal(grade('visa','FOREIGN MEDIA REPRESENTATIVE (I)','Visa B1','exact').outcome,'retry');
+  assert.equal(grade('purpose','FOREIGN MEDIA REPRESENTATIVE (I)','Sí','explanation').outcome,'clarify');
   assert.equal(grade('passport','RD999000','RD888000','exact',2).outcome,'review');
   assert.equal(grade('invitation','AIPMA','No sé').outcome,'clarify');
   assert.equal(grade('invitation','AIPMA','No sé','document',2).repeat,false);
