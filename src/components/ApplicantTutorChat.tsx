@@ -352,6 +352,12 @@ export default function ApplicantTutorChat() {
       if (!voiceOnRef.current || activeCaseRef.current !== forCase) { setSpeaking(false); return; }
       if (index >= segments.length) {
         setSpeaking(false);
+        // When the guided interview finishes and there is no document for
+        // free questions, do not leave the microphone listening indefinitely.
+        if (!guidedRef.current && !selectedDocs.length) {
+          stopVoice();
+          return;
+        }
         try { recognitionRef.current?.start(); setListening(true); }
         catch { setError('Pulsa el micrófono para continuar.'); }
         return;
