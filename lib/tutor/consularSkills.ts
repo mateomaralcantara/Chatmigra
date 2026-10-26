@@ -36,6 +36,7 @@ export const CONSULAR_SKILLS: readonly ConsularSkill[] = [
   {id:'identity',title:'Identificación personal',method:'exact',field:'fullName',question:'¿Cuál es tu nombre completo, tal como figura en la solicitud?',objective:'Identidad del solicitante',correction:'Compara los nombres con la solicitud y el pasaporte.'},
   {id:'birth',title:'Nacimiento y nacionalidad',method:'date',field:'birthDate',question:'¿Cuál es tu fecha de nacimiento?',objective:'Precisar el dato biográfico',correction:'Comprueba la fecha en el documento de identidad.'},
   {id:'passport',title:'Pasaporte y vigencia',method:'exact',field:'passportNumber',question:'¿Cuál es el número de tu pasaporte vigente?',objective:'Confirmar identidad documental',correction:'Revisa los caracteres del pasaporte original.'},
+  {id:'residence',title:'Domicilio de residencia',method:'document',field:'homeAddress',question:'¿Dónde vives actualmente?',objective:'Comprobar coherencia del domicilio declarado sin exigir recitar la dirección completa',correction:'Basta describir la calle o sector y la ciudad; si cambiaste de domicilio debes indicarlo.'},
   {id:'visa',title:'Categoría migratoria',method:'exact',field:'visaType',question:'¿Qué clase de visa o trámite estás solicitando?',objective:'Categoría declarada',correction:'Revisa la categoría solicitada en el formulario.'},
   {id:'purpose',title:'Propósito del viaje',method:'explanation',field:'tripPurpose',question:'¿Cuál es el propósito real de tu viaje?',objective:'Explicar el motivo con claridad',correction:'Explica con tus palabras el propósito verdadero; no memorices información falsa.'},
   {id:'invitation',title:'Invitación y organizador',method:'document',field:'organizer',question:'¿Qué organización te invitó y qué actividad realizarás?',objective:'Identificar invitación y función',correction:'Consulta la invitación que corresponda a tu identidad.'},
@@ -104,6 +105,7 @@ export function assembleConsularEvidence(
     fullName:[label('(?:Name Provided|Full Name in Native Language|nombre completo|nombre proporcionado|nombre de la solicitante)')],
     birthDate:[label('(?:Date of Birth|Fecha de nacimiento)')],
     passportNumber:[label('(?:Passport\\/Travel Document Number|Passport Number|número de pasaporte|numero de pasaporte|documento de viaje|PASS|PASAPORTE)')],
+    homeAddress:[label('(?:Home Address|Home Street Address|Street Address \\(1\\)|Dirección de domicilio|Direcci[oó]n residencial|Dirección actual|Domicilio actual)')],
     visaType:[label('(?:Purpose of Trip to the U\\.S\\. \\(1\\)|Visa Type|Tipo de visa|propósito del viaje a estados unidos|proposito del viaje a estados unidos)')],
     arrivalDate:[label('(?:Date of Arrival in U\\.S\\.|Fecha de llegada|fecha de ingreso)')],
     departureDate:[label('(?:Date of Departure from U\\.S\\.|Fecha de salida|fecha de regreso)')],
@@ -209,73 +211,187 @@ export type InterviewGrade = {
   feedback:string;
   repeat:boolean;
 };
+
 /**
- * Never classify an applicant as dishonest merely because a document differs.
- * "retry" means reproduce a documented fact; "review" means investigate
- * ambiguity or updated real-world information.
+ * Conversational rubric: sufficient answers are acceptable. Do not require
+ * DS-160 wording, a four-word minimum, a middle name, or a street ZIP code.
+ * Ask again only if the answer is unintelligible or materially contradictory.
+ * A soft acceptance is NOT verification of a real-world fact.
  */
+const NON_ANSWER = /^(?:no se|no recuerdo|no estoy segur[oa]|ni idea|desconozco|prefiero no responder|no lo se|no tengo idea|no entendi)$/;
+const EVENT_WORDS = /\b(?:evento|congreso|conferencia|encuentro|foro|seminario|reunion|convencion|simposio|actividad|periodismo|periodista|prensa|cobertura|noticias|entrevistas?|reportaje)\b/;
+const MEDIA_WORDS = /\b(?:evento|congreso|conferencia|encuentro|foro|periodis\w*|prensa|cobertura|reporter\w*|corresponsal\w*|medios|noticias|reportaje|entrevista\w*|actividad profesional)\b/;
+const TOURISM_WORDS = /\b(?:turism\w*|vacacion\w*|paseo|compras|playa)\b/;
+const FILLERS = new Set(['yo','mi','me','llamo','soy','el','la','los','las','de','del','en','un','una','voy','a','al','por','que','y','para','estoy','vivo','viviendo','actualmente','es','se','encuentra','ubicado','ubicada','tengo','como','trabajo','con','mis','sus','su','the','my','and','of','at','in','on']);
+const FIRST_NAMES = new Set(['ana','maria','juan','jose','pedro','rosa','mariel','yaenqui','francelis','carlos','manuel','luisa','marta','alejandro','luis','francisco','antonio','ramon','miguel','diana','jessica','pablo','mariana']);
+const NAME_NUMBERS = new Map([['uno','1'],['dos','2'],['tres','3'],['cuatro','4'],['cinco','5'],['seis','6'],['siete','7'],['ocho','8'],['nueve','9'],['diez','10'],['once','11'],['doce','12'],['quince','15'],['veinte','20']]);
+function meaningfulTokens(value:string):string[] {
+  return norm(value).split(' ').filter(token=>token.length>1 && !FILLERS.has(token));
+}
+function simpleLocation(value:string):string[] {
+  return meaningfulTokens(value).map(token=>NAME_NUMBERS.get(token) || token)
+    .filter(token=>!['calle','avenida','av','numero','num','sector','barrio','urbanizacion','ciudad','provincia','republica','dominicana','direccion','residencia','domicilio','edificio','casa'].includes(token));
+}
+function nameGroups(value:string):{given:Set<string>,surnames:Set<string>}{
+  const parts=value.split(',');
+  if(parts.length>=2) return {
+    given:new Set(meaningfulTokens(parts.slice(1).join(' '))),
+    surnames:new Set(meaningfulTokens(parts[0])),
+  };
+  const tokens=meaningfulTokens(value);
+  // Simple names often arrive as 'ANA MARIA PEREZ GARCIA'. Accept a
+  // given-name + surname, in either order, rather than all four tokens.
+  const split=tokens.findIndex((token,i)=>i>0&&!FIRST_NAMES.has(token));
+  const at=split>0?split:Math.max(1,Math.floor(tokens.length/2));
+  return {given:new Set(tokens.slice(0,at)),surnames:new Set(tokens.slice(at))};
+}
+function nameIsSufficient(answer:string,expected:string):boolean {
+  const tokens=new Set(meaningfulTokens(answer));
+  if(tokens.size<2)return false;
+  const groups=nameGroups(expected);
+  return [...groups.given].some(token=>tokens.has(token)) &&
+    [...groups.surnames].some(token=>tokens.has(token));
+}
+function dateIsCompatible(answer:string,expected:string):boolean {
+  const a=normalizedDate(answer),b=normalizedDate(expected);
+  if(a===b)return true;
+  // With a full date on the form, day + month are enough to rehearse a
+  // natural answer when the applicant does not mention the year.
+  const parts=a.match(/\b(\d{1,2})\s+([a-z]+)\b/);
+  if(parts && monthNames[parts[2]] && /^\d{4}-\d{2}-\d{2}$/.test(b)) {
+    return Number(parts[1])===Number(b.slice(-2)) && monthNames[parts[2]]===b.slice(5,7);
+  }
+  const numbers=norm(answer).match(/^\d{1,2}\s+\d{1,2}\s+(?:19|20)\d{2}$/);
+  if(numbers && /^\d{4}-\d{2}-\d{2}$/.test(b)){
+    const values=numbers[0].split(' ');
+    return Number(values[0])===Number(b.slice(-2)) &&
+      Number(values[1])===Number(b.slice(5,7)) &&
+      Number(values[2])===Number(b.slice(0,4));
+  }
+  return false;
+}
+function phraseIsCompatible(answer:string,expected:string):boolean {
+  const a=meaningfulTokens(answer), b=new Set(meaningfulTokens(expected));
+  if(!a.length || !b.size)return false;
+  // One or two distinctive matching words can support an abbreviated
+  // address, employer, occupation, organizer or activity. Do not demand
+  // recitation of the full document label.
+  const matched=a.filter(token=>b.has(token)).length;
+  return matched>=Math.min(2,a.length) && matched>=1;
+}
+function naturalAddress(answer:string):boolean {
+  const tokens=simpleLocation(answer);
+  const base=norm(answer);
+  return tokens.some(token=>token.length>2 && !['si','no','aqui','alla'].includes(token)) ||
+    /\b\d+\b/.test(base) && /\b(?:calle|sector|avenida|barrio)\b/.test(base);
+}
+function accepted(message='Bien, entendido. Continuemos.'):InterviewGrade {
+  return {outcome:'correct',feedback:message,repeat:false};
+}
+function acceptedWithCaution():InterviewGrade {
+  return {outcome:'review',feedback:'Entendido. Continuemos. Si los datos reales cambiaron, conviene actualizar el expediente.',repeat:false};
+}
+function askClarify(message:string,attempts:number):InterviewGrade {
+  return attempts>=2
+    ? {outcome:'review',feedback:'Anotaremos este punto para revisarlo. Continuemos.',repeat:false}
+    : {outcome:'clarify',feedback:message,repeat:true};
+}
+function conflict(item:PreparedQuestion,attempts:number):InterviewGrade {
+  const note='El documento aportado indica: '+item.expected+
+    '. Si tu situación cambió, debemos verificar y corregir el expediente, no memorizar información inexacta.';
+  return attempts>=2
+    ? {outcome:'review',feedback:note+' Dejaremos este punto pendiente y seguiremos.',repeat:false}
+    : {outcome:'retry',feedback:note+' ¿Puedes aclarar tu respuesta?',repeat:true};
+}
 export function evaluateConsularAnswer(
   item:PreparedQuestion,
   answer:string,
   attempts:number,
 ):InterviewGrade {
   const spoken=answer.trim();
-  if(!spoken || (norm(spoken).length<2 && !(item.id==='visa' && norm(spoken)==='i')))
-    return {outcome:'clarify',feedback:'No escuché una respuesta completa. Te pregunto de nuevo.',repeat:true};
-  if(item.method==='explanation' &&
-      /foreign media representative/.test(norm(item.expected||''))) {
-    if(/\b(?:turism\w*|vacacion\w*|paseo|compras)\b/i.test(norm(spoken)) ||
-      !/\b(?:prensa|periodism\w*|periodist\w*|cobertura|reporter\w*|corresponsal\w*|medios|noticias|entrevista\w*|congreso)\b/i.test(norm(spoken))) {
-      return {outcome:attempts>=2?'review':'retry',
-        feedback:'El documento indica una categoría de representante de medios. Tu respuesta no explica claramente esa actividad. Si el propósito real es otro, hay que revisar el DS-160, no inventar una explicación. '+(attempts<2?'¿Puedes aclararlo?':'Revisaremos este punto.'),
-        repeat:attempts<2};
-    }
+  const a=norm(spoken), expected=norm(item.expected||'');
+  if(!spoken || (!a && spoken!=='I'))
+    return askClarify('No pude escuchar tu respuesta. Inténtalo de nuevo.',attempts);
+  if(NON_ANSWER.test(a))
+    return askClarify('Si no recuerdas el dato, podemos marcarlo para revisar. ¿Quieres intentarlo otra vez?',attempts);
+
+  // Personal names: two supported components (one given, one surname)
+  // suffice. Do not reject because of middle names, accents or order.
+  if(item.id==='identity') {
+    if(!item.expected)return meaningfulTokens(spoken).length>=2
+      ?accepted():askClarify('Dime por lo menos un nombre y un apellido.',attempts);
+    if(nameIsSufficient(spoken,item.expected))return accepted();
+    if(meaningfulTokens(spoken).length<2)
+      return askClarify('Basta decir tu primer nombre y un apellido.',attempts);
+    return conflict(item,attempts);
   }
-  if(!item.expected || item.status==='discrepancy' ||
-     ['practice','explanation','reconcile'].includes(item.method)){
-    if(norm(spoken).split(' ').length<4 && item.method!=='yesno')
-      return {outcome:'clarify',feedback:'Dame un poco más de contexto con tus propias palabras.',repeat:attempts<2};
-    return {outcome:'review',feedback:'Respuesta registrada. Comprueba que coincida con tu situación real y los documentos; continuemos.',repeat:false};
+
+  // Passport is an identifier; do not guess or semantically approximate it.
+  if(item.id==='passport' && item.expected){
+    const id=(value:string)=>value.replace(/[^a-zA-Z0-9]/g,'').toUpperCase();
+    return id(spoken)===id(item.expected) ? accepted() : conflict(item,attempts);
   }
-  const expected=norm(item.expected),answerNorm=norm(spoken);
-  let match=false;
-  if(item.method==='date') match=normalizedDate(spoken)===normalizedDate(item.expected);
-  else if(item.method==='yesno') match=(yes(spoken)&&yes(item.expected))||(no(spoken)&&no(item.expected));
-  else if(item.method==='exact') {
-    match=answerNorm===expected ||
-      (answerNorm.length>=3 && expected.includes(answerNorm) && expected.length-answerNorm.length<12);
-    if(item.id==='identity'){
-      const tokens=(value:string)=>norm(value).split(' ').filter(Boolean).sort().join(' ');
-      match=match || tokens(spoken)===tokens(item.expected);
-    }
-    if(item.id==='visa' && /foreign media representative/.test(expected)){
-      match=match || /^(?:i|visa i|visa tipo i|representante de medios(?: extranjeros)?|visa de periodista)$/i.test(answerNorm);
-    }
-    if(item.id==='funding' && expected==='self') {
-      match=match || /^(?:yo|yo misma|yo mismo|por mi cuenta|con mis propios fondos)$/.test(answerNorm);
-    }
+
+  // Category synonyms and natural-language explanations of media activity.
+  if(item.id==='visa' && /foreign media representative|representante de medios/.test(expected) &&
+     /^(?:i|visa i|visa tipo i|visa de periodista|periodista|representante de medios(?: extranjeros)?|periodismo|para periodismo|medios de comunicacion)$/i.test(a))return accepted();
+
+  // Dates are material. Recognize natural Spanish and English month names,
+  // and allow day + month when the year was not asked explicitly.
+  if(item.method==='date' && item.expected)
+    return dateIsCompatible(spoken,item.expected)?accepted():conflict(item,attempts);
+
+  // Negative history versus affirmative document remains important.
+  if(item.method==='yesno' && item.expected) {
+    if(yes(spoken)&&yes(item.expected) || no(spoken)&&no(item.expected))return accepted();
+    if(yes(spoken)||no(spoken))return conflict(item,attempts);
+    return askClarify('Puedes responder simplemente sí o no, según lo que ocurrió.',attempts);
   }
-  else {
-    const words=expected.split(' ').filter(x=>x.length>3);
-    match=(answerNorm.length>=4 && expected.includes(answerNorm)) ||
-      (words.length>0 && words.filter(w=>answerNorm.includes(w)).length/words.length>=.65);
-    if(item.id==='invitation' && match && answerNorm.split(' ').length<4) {
-      return {outcome:attempts>=2?'review':'clarify',
-        feedback:'Identificaste al organizador. Explica también qué actividad realizarás realmente durante la visita.',
-        repeat:attempts<2};
-    }
+  if(item.method==='yesno' && !item.expected)
+    return yes(spoken)||no(spoken)?acceptedWithCaution():acceptedWithCaution();
+
+  // Visa I media trip: a conference, press event or professional activity
+  // is a reasonable short answer even without the event's full legal title.
+  // A plainly different holiday purpose is not coached into a false story.
+  if(['purpose','journalism'].includes(item.id)) {
+    if(item.expected && /foreign media representative|representante de medios/.test(expected) &&
+       TOURISM_WORDS.test(a) && !MEDIA_WORDS.test(a)) return conflict(item,attempts);
+    if(MEDIA_WORDS.test(a))return accepted();
+    if(a.length>2)return acceptedWithCaution();
+    return askClarify('¿Qué actividad concreta realizarás en el viaje?',attempts);
   }
-  if(match)return {outcome:'correct',feedback:'Correcto. Continuemos.',repeat:false};
-  if(attempts>=2)return {
-    outcome:'review',feedback:'Tu respuesta no coincide con '+(item.source||'el documento')+
-      '. El documento indica: '+item.expected+
-      '. Comprueba cuál es el dato real y corrige el expediente si ha cambiado. Seguimos.',
-    repeat:false,
-  };
-  return {
-    outcome:'retry',feedback:'Tu respuesta difiere de '+(item.source||'los documentos')+
-      '. Allí aparece: '+item.expected+
-      '. Comprueba el dato antes de responder. Te lo preguntaré nuevamente.',
-    repeat:true,
-  };
+  if(item.id==='invitation') {
+    if(EVENT_WORDS.test(a) || phraseIsCompatible(spoken,item.expected||''))
+      return accepted();
+    return a.length>2?acceptedWithCaution():
+      askClarify('¿A qué evento o actividad asistirás?',attempts);
+  }
+
+  // A normal spoken address need not recite ZIP code, province, full
+  // street name, or all of an organization's contact details.
+  if(['residence','address'].includes(item.id)) {
+    if(naturalAddress(spoken) || phraseIsCompatible(spoken,item.expected||''))
+      return accepted();
+    return a.length>2?acceptedWithCaution():
+      askClarify('Indica al menos el sector, una calle o la ciudad.',attempts);
+  }
+
+  // Common payer equivalences: 'yo', 'mi empresa', 'la organización'.
+  if(item.id==='funding' && item.expected) {
+    const self=/^(?:self|yo|yo misma|yo mismo|mis fondos|mis ahorros|por mi cuenta|con mi dinero|yo pago|lo pago yo)$/;
+    if(expected==='self' && self.test(a))return accepted();
+    if(expected==='self' && /\b(?:empresa|organizacion|patrocinador|familiar|padre|madre)\b/.test(a))
+      return conflict(item,attempts);
+  }
+
+  // Other document-backed questions are assessed for meaningful overlap,
+  // not a fixed word count or literal reproduction. Ambiguity is noted
+  // without forcing applicants to adopt a scripted answer.
+  if(item.expected) {
+    if(a===expected || phraseIsCompatible(spoken,item.expected))return accepted();
+    if(item.method==='exact' && ['funding','visa'].includes(item.id) && a.length>3)
+      return acceptedWithCaution();
+  }
+  if(a.length>=2)return acceptedWithCaution();
+  return askClarify('¿Puedes decirlo de otra manera?',attempts);
 }
