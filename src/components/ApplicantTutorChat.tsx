@@ -336,7 +336,7 @@ export default function ApplicantTutorChat() {
   };
 
   const startSimulator = async () => {
-    if(!caseId || !selectedDocs.length || loading || busyRef.current) return;
+    if(!caseId || !docs.length || loading || busyRef.current) return;
     const currentCase=caseId;
     busyRef.current=true;setLoading(true);setError('');setNotice('');
     try {
@@ -345,7 +345,7 @@ export default function ApplicantTutorChat() {
       const response=await fetch('/api/applicant-simulator',{
         method:'POST',
         headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},
-        body:JSON.stringify({caseId:currentCase,documentIds:selectedDocs}),
+        body:JSON.stringify({caseId:currentCase}),
       });
       const payload: {
         error?:string;questions?:PreparedQuestion[];
@@ -946,7 +946,7 @@ export default function ApplicantTutorChat() {
           <input ref={fileRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" className="cm-expediente-file-input" onChange={event => void uploadDocument(event)} disabled={!caseId || loading} aria-label="Subir documentos al expediente" />
           <button type="button" className="cm-tutor-upload" onClick={() => fileRef.current?.click()} disabled={!caseId || loading}>＋ Subir documentos</button>
           <button type="button" className="cm-tutor-upload" onClick={() => void startSimulator()}
-            disabled={!caseId || !selectedDocs.length || loading || Boolean(simulator)}>
+            disabled={!caseId || !docs.length || loading || Boolean(simulator)}>
             🎓 Simulacro consular (19 módulos)
           </button>
           {simulator && <button type="button" className="cm-tutor-upload"
