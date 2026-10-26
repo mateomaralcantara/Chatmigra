@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEv
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { supabase } from '../services/supabaseClient';
-import { interviewProgress, INTERVIEW_COMPLETE, naturalSpanishSpeech } from '../../lib/tutor/interview';
-import { evaluateConsularAnswer, type PreparedQuestion } from '../../lib/tutor/consularSkills';
+import { naturalSpanishSpeech } from '../../lib/tutor/interview';
+import { evaluateConsularAnswer, resumeConsularInterview, CONSULAR_FINISHED, type PreparedQuestion } from '../../lib/tutor/consularSkills';
 
 type CaseRow = { id: string; applicant_name: string; owner_id: string; nationality: string; destination: string; visa_type: string };
 type SimulatorRun = { questions: PreparedQuestion[]; index:number; attempts:number; alerts:string[]; excluded:string[]; unindexed:string[] };
@@ -79,7 +79,7 @@ function exactFactReply(question: string, response: string): string {
 
 export default function ApplicantTutorChat() {
   const [mode, setMode] = useState<Mode>('chat');
-  const [guided, setGuided] = useState(true);
+  const [guided, setGuided] = useState(false);
   const [simulator, setSimulator] = useState<SimulatorRun | null>(null);
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [caseId, setCaseId] = useState(currentCaseId);
@@ -110,7 +110,8 @@ export default function ApplicantTutorChat() {
   const busyRef = useRef(false);
   const activeCaseRef = useRef(caseId);
   const messagesRef = useRef<MessageRow[]>([]);
-  const guidedRef = useRef(true);
+  const guidedRef = useRef(false);
+  const startingSimulatorCasesRef = useRef(new Set<string>());
   const simulatorRef = useRef<SimulatorRun | null>(null);
   const caseProfilesRef = useRef<CaseRow[]>([]);
   const loggedUserRef = useRef('');
@@ -175,21 +176,69 @@ export default function ApplicantTutorChat() {
     const history = ((conversation.data || []) as MessageRow[]).reverse();
     setMessages(history);
     setOlderAvailable(history.length === 100);
-    // On a selected case the agent always asks first. No model call and no
-    // document upload is needed merely to begin the intake interview.
-    const profile = caseProfilesRef.current.find(item => item.id === id) || {};
-    const state = interviewProgress(history, profile);
-    if (state.completed) { guidedRef.current = false; setGuided(false); }
-    if (guidedRef.current && !state.pending && !state.completed && state.nextQuestion) {
-      const prompt = state.nextQuestion;
-      setMessages([...history, {role:'model',content:prompt}]);
-      const {error:questionError} = await supabase.from('applicant_case_messages').insert({
-        case_id:id,created_by:loggedUserRef.current,role:'model',content:prompt
+    // The consular simulator, grounded in this applicant's indexed documents,
+    // takes priority over every legacy generic intake prompt.
+    guidedRef.current=false;setGuided(false);
+    if(!fileRows.length) {
+      setNotice('Sube el DS-160 y los documentos de respaldo para iniciar una entrevista consular dirigida.');
+      return;
+    }
+    if(!readyJobs?.length) {
+      setNotice('Tus documentos aún necesitan preparación. Pulsa «Preparar búsqueda rápida» para que el agente pueda entrevistarte sobre sus datos.');
+      return;
+    }
+    if(simulatorRef.current || startingSimulatorCasesRef.current.has(id)) return;
+    startingSimulatorCasesRef.current.add(id);
+    setNotice('El Tutor está preparando las preguntas a partir de tus documentos...');
+    try {
+      const {data:{session}}=await supabase.auth.getSession();
+      if(!session?.access_token)throw new Error('Inicia sesión nuevamente.');
+      const response=await fetch('/api/applicant-simulator',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},
+        body:JSON.stringify({caseId:id}),
       });
-      if (questionError && mountedRef.current && activeCaseRef.current === id) {
-        setMessages(history);
-        setError('El Tutor no pudo guardar la primera pregunta. Comprueba tu sesión.');
+      const payload: {
+        error?:string;questions?:PreparedQuestion[];alerts?:string[];
+        excluded?:string[];unindexed?:string[];
+      }=await response.json().catch(()=>({}));
+      if(!response.ok || !payload.questions?.length) {
+        throw new Error(payload.error || 'No se pudieron preparar preguntas documentales.');
       }
+      if(!mountedRef.current || activeCaseRef.current!==id) return;
+      const progress=resumeConsularInterview(history,payload.questions);
+      if(progress.completed){
+        setNotice('Este simulacro ya terminó. Pulsa «Reiniciar simulacro» para practicar nuevamente.');
+        return;
+      }
+      const run:SimulatorRun={
+        questions:payload.questions,index:progress.index,attempts:progress.attempts,
+        alerts:payload.alerts||[],excluded:payload.excluded||[],unindexed:payload.unindexed||[],
+      };
+      simulatorRef.current=run;setSimulator(run);
+      if(progress.pending){
+        setNotice('Simulacro reanudado en la pregunta '+(progress.index+1)+'.');
+        return;
+      }
+      // Previous messages from the old generic interview remain in history,
+      // but must never drive or replace this first consular question.
+      const prompt=run.questions[run.index].question;
+      setMessages([...history,{role:'model',content:prompt}]);
+      const {error:saveError}=await supabase.from('applicant_case_messages').insert({
+        case_id:id,created_by:loggedUserRef.current,role:'model',content:prompt,
+      });
+      if(saveError) throw new Error('No se pudo guardar la primera pregunta del simulacro.');
+      if(mountedRef.current && activeCaseRef.current===id){
+        setNotice('El agente inicia la entrevista consular. Responde su primera pregunta.');
+      }
+    } catch(error){
+      if(mountedRef.current && activeCaseRef.current===id) {
+        simulatorRef.current=null;setSimulator(null);
+        setMessages(history);
+        setError(error instanceof Error ? error.message : 'No se pudo iniciar el simulacro.');
+      }
+    } finally {
+      startingSimulatorCasesRef.current.delete(id);
     }
   }, []);
 
@@ -217,7 +266,7 @@ export default function ApplicantTutorChat() {
   useEffect(() => {
     activeCaseRef.current = caseId;
     setError(''); setNotice(''); setTranscript('');
-    guidedRef.current = true; setGuided(true);
+    guidedRef.current = false; setGuided(false);
     simulatorRef.current = null; setSimulator(null);
     setDocs([]); setFacts([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false);
     voiceOnRef.current = false; setVoiceOn(false);
@@ -327,6 +376,7 @@ export default function ApplicantTutorChat() {
         if (!factResponse.error) setFacts((factResponse.data||[]) as FactRow[]);
         setNotice(successes + ' documento(s) preparados. Las próximas preguntas usarán fragmentos indexados cuando todos los seleccionados estén listos.');
         if (failures.length) setError(failures.join(' | ').slice(0,900));
+        if (successes > 0 && !simulatorRef.current) void refreshCase(caseId);
       }
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Error preparando índice.');
