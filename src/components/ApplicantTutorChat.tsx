@@ -177,7 +177,10 @@ export default function ApplicantTutorChat() {
     // active consular conversation. It must never be mistaken for this agent's
     // question or be used to grade the applicant's next answer.
     const firstConsular = history.findIndex(message =>
-      message.role==='model' && message.content==='¿Cuál es tu nombre completo, tal como figura en la solicitud?');
+      message.role==='model' && (
+        message.content===CONSULAR_SKILLS[0].question ||
+        message.content==='¿Cuál es tu nombre completo, tal como figura en la solicitud?'
+      ));
     const activeHistory = firstConsular<0 ? [] : history.slice(firstConsular);
     setPreviousMessages(firstConsular<0 ? history : history.slice(0,firstConsular));
     setMessages(activeHistory);
