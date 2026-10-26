@@ -447,19 +447,19 @@ test('Tutor gives exactly the requested fact without unsolicited sources in Chat
   assert.equal(
     normalize(
       'la fecha de nacimiento del aplicante',
-      'La fecha de nacimiento de la aplicante es el **21 de marzo de 1983** (21 MARCH 1983).\\n\\n**Fuente:** Formulario DS-160, página 1.',
+      'La fecha de nacimiento de la aplicante es el **21 de marzo de 1983** (21 MARCH 1983).\n\n**Fuente:** Formulario DS-160, página 1.',
     ),
     '21 de marzo de 1983',
   );
   assert.equal(
     normalize('qué tipo de visa estoy solicitando',
-      'Según el perfil del expediente, la visa solicitada: PERIODISTA VISA I.\\nFuente: perfil'),
+      'Según el perfil del expediente, la visa solicitada: PERIODISTA VISA I.\nFuente: perfil'),
     'PERIODISTA VISA I',
   );
   assert.equal(
     normalize('Analiza la fecha de nacimiento y sus discrepancias',
-      'Hay dos fechas distintas.\\nFuente: dos documentos'),
-    'Hay dos fechas distintas.\\nFuente: dos documentos',
+      'Hay dos fechas distintas.\nFuente: dos documentos'),
+    'Hay dos fechas distintas.\nFuente: dos documentos',
   );
   assert.match(tutor, /show\(exactFactReply\(text, responseText\)\)/);
   assert.match(tutor, /readAnswerAloud\(finalReply, queriedCase\)/);
