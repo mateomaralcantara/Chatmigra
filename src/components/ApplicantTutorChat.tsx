@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEv
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { supabase } from '../services/supabaseClient';
+import { interviewProgress, INTERVIEW_COMPLETE, naturalSpanishSpeech } from '../../lib/tutor/interview';
 
-type CaseRow = { id: string; applicant_name: string; owner_id: string };
+type CaseRow = { id: string; applicant_name: string; owner_id: string; nationality: string; destination: string; visa_type: string };
 type FactRow = { id:string; fact_key:string; fact_value:string; document_id:string|null; verification_status:'pending_review'|'verified'|'rejected' };
 type DocRow = { id: string; filename: string; mime_type: string; storage_path: string; created_at: string };
 type MessageRow = { id?: string; role: 'user' | 'model'; content: string; created_at?: string };
@@ -76,6 +77,7 @@ function exactFactReply(question: string, response: string): string {
 
 export default function ApplicantTutorChat() {
   const [mode, setMode] = useState<Mode>('chat');
+  const [guided, setGuided] = useState(true);
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [caseId, setCaseId] = useState(currentCaseId);
   const [docs, setDocs] = useState<DocRow[]>([]);
@@ -105,6 +107,9 @@ export default function ApplicantTutorChat() {
   const busyRef = useRef(false);
   const activeCaseRef = useRef(caseId);
   const messagesRef = useRef<MessageRow[]>([]);
+  const guidedRef = useRef(true);
+  const caseProfilesRef = useRef<CaseRow[]>([]);
+  const loggedUserRef = useRef('');
   const mountedRef = useRef(true);
 
   useEffect(() => { messagesRef.current = messages; endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages]);
@@ -112,11 +117,13 @@ export default function ApplicantTutorChat() {
   const refreshCases = useCallback(async (preferred?: string) => {
     const signedIn = await loggedInUser();
     setCurrentUserId(signedIn.id);
+    loggedUserRef.current = signedIn.id;
     const { data, error: queryError } = await supabase.from('applicant_cases')
-      .select('id,applicant_name,owner_id').order('created_at', { ascending: false });
+      .select('id,applicant_name,owner_id,nationality,destination,visa_type').order('created_at', { ascending: false });
     if (queryError) throw new Error('No se pudieron cargar tus expedientes. Revisa la instalación de Supabase.');
     const rows = (data || []) as CaseRow[];
     if (!mountedRef.current) return;
+    caseProfilesRef.current = rows;
     setCases(rows);
     setCaseId(existing => {
       const wanted = preferred || existing;
@@ -158,9 +165,24 @@ export default function ApplicantTutorChat() {
       const existing = previous.filter(p => fileRows.some(f => f.id === p));
       return (existing.length ? existing : fileRows.slice(0, 4).map(f => f.id)).slice(0, 4);
     });
-    const history = (conversation.data || []) as MessageRow[];
-    setMessages(history.reverse());
+    const history = ((conversation.data || []) as MessageRow[]).reverse();
+    setMessages(history);
     setOlderAvailable(history.length === 100);
+    // On a selected case the agent always asks first. No model call and no
+    // document upload is needed merely to begin the intake interview.
+    const profile = caseProfilesRef.current.find(item => item.id === id) || {};
+    const state = interviewProgress(history, profile);
+    if (guidedRef.current && !state.pending && !state.completed && state.nextQuestion) {
+      const prompt = state.nextQuestion;
+      setMessages([...history, {role:'model',content:prompt}]);
+      const {error:questionError} = await supabase.from('applicant_case_messages').insert({
+        case_id:id,created_by:loggedUserRef.current,role:'model',content:prompt
+      });
+      if (questionError && mountedRef.current && activeCaseRef.current === id) {
+        setMessages(history);
+        setError('El Tutor no pudo guardar la primera pregunta. Comprueba tu sesión.');
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -187,6 +209,7 @@ export default function ApplicantTutorChat() {
   useEffect(() => {
     activeCaseRef.current = caseId;
     setError(''); setNotice(''); setTranscript('');
+    guidedRef.current = true; setGuided(true);
     setDocs([]); setFacts([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false);
     voiceOnRef.current = false; setVoiceOn(false);
     voiceSessionRef.current = '';
@@ -306,7 +329,7 @@ export default function ApplicantTutorChat() {
   // Short speech utterances are chained to avoid browsers truncating long answers.
   const readAnswerAloud = (answer: string, forCase: string) => {
     if (!window.speechSynthesis || !voiceOnRef.current) return;
-    const plain = answer.replace(/[*#_\[\]<>]/g, ' ').replace(/\s+/g, ' ').trim();
+    const plain = naturalSpanishSpeech(answer);
     const words = plain.split(' ');
     const segments: string[] = [];
     let chunk = '';
@@ -330,8 +353,13 @@ export default function ApplicantTutorChat() {
         return;
       }
       const utterance = new SpeechSynthesisUtterance(segments[index++]);
-      utterance.lang = 'es-DO';
-      utterance.rate = 1;
+      const spanishVoices = window.speechSynthesis.getVoices().filter(voice =>
+        voice.lang.toLowerCase().startsWith('es'));
+      utterance.voice = spanishVoices.find(voice => voice.lang.toLowerCase() === 'es-do')
+        || spanishVoices.find(voice => voice.localService)
+        || spanishVoices[0] || null;
+      utterance.lang = utterance.voice?.lang || 'es-DO';
+      utterance.rate = 1.12;
       utterance.onend = next;
       utterance.onerror = () => { setSpeaking(false); stopVoice(); };
       window.speechSynthesis.speak(utterance);
@@ -342,8 +370,41 @@ export default function ApplicantTutorChat() {
   const askQuestion = async (rawText: string, spoken: boolean): Promise<void> => {
     const text = rawText.trim();
     if (!text || !caseId || busyRef.current) return;
+    // Guided mode is local-first: an answer triggers the next agent question
+    // instantly, without Gemini, PDFs, a server roundtrip, or a 3-word limit.
+    const activeProfile = caseProfilesRef.current.find(item => item.id === caseId) || {};
+    const snapshot = [...messagesRef.current];
+    const state = interviewProgress(snapshot, activeProfile);
+    if (guidedRef.current && state.pending && state.nextQuestion) {
+      busyRef.current = true; setLoading(true); setError(''); setNotice('');
+      const afterAnswer = [...snapshot, {role:'user' as const,content:text}];
+      const followUp = interviewProgress(afterAnswer, activeProfile);
+      const nextPrompt = followUp.nextQuestion || INTERVIEW_COMPLETE;
+      setMessages([...afterAnswer, {role:'model',content:nextPrompt}]);
+      const activeId = caseId;
+      try {
+        const user = await loggedInUser();
+        const moment = Date.now();
+        const {error:saveError}=await supabase.from('applicant_case_messages').insert([
+          {case_id:activeId,created_by:user.id,role:'user',content:text.slice(0,15000),created_at:new Date(moment).toISOString()},
+          {case_id:activeId,created_by:user.id,role:'model',content:nextPrompt,created_at:new Date(moment+1).toISOString()},
+        ]);
+        if (saveError) throw new Error('No se pudo guardar la entrevista.');
+        if (mountedRef.current && activeCaseRef.current === activeId) {
+          setQuestion('');
+          if (followUp.completed) { guidedRef.current=false; setGuided(false); }
+          if (spoken && voiceOnRef.current) readAnswerAloud(nextPrompt, activeId);
+        }
+      } catch (err) {
+        if (activeCaseRef.current === activeId) {
+          setMessages(snapshot);
+          setError(err instanceof Error ? err.message : 'No se pudo guardar la respuesta.');
+        }
+      } finally { busyRef.current=false; if (mountedRef.current) setLoading(false); }
+      return;
+    }
     if (!selectedDocs.length) {
-      setError('Sube y selecciona al menos un documento para consultar al Tutor.');
+      setError('Selecciona un documento para realizar consultas fuera de la entrevista.');
       return;
     }
     busyRef.current = true; setLoading(true); setError(''); setNotice(''); setReplyIncomplete(false);
