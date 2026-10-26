@@ -24,21 +24,28 @@ export default async function handler(req:Request,res:Response) {
   const body=bodyObject(req.body);
   const caseId=typeof body.caseId==='string'?body.caseId:'';
   const inputIds=body.documentIds;
-  if(!UUID.test(caseId) || !Array.isArray(inputIds) || inputIds.length<1 ||
-    inputIds.length>4 || inputIds.some(id=>typeof id!=='string'||!UUID.test(id)) ||
-    new Set(inputIds).size!==inputIds.length) {
-    return res.status(400).json({error:'Selecciona entre uno y cuatro documentos válidos.'});
+  // The consular simulator covers the entire private case, not only the four
+  // documents allowed in an individual Gemini chat prompt.
+  if(!UUID.test(caseId) ||
+    (inputIds!==undefined && (!Array.isArray(inputIds) || inputIds.length<1 ||
+      inputIds.length>30 || inputIds.some(id=>typeof id!=='string'||!UUID.test(id)) ||
+      new Set(inputIds).size!==inputIds.length))) {
+    return res.status(400).json({error:'Expediente o selección documental inválida.'});
   }
   // No service_role: each profile, document and chunk is individually scoped
   // by the authenticated caller's case RLS.
   const {data:caseRow,error:caseError}=await auth.supabase.from('applicant_cases')
     .select('id,applicant_name').eq('id',caseId).maybeSingle();
   if(caseError || !caseRow)return res.status(403).json({error:'No tienes acceso a este expediente.'});
-  const ids=inputIds as string[];
-  const {data:docRows,error:docError}=await auth.supabase.from('applicant_case_documents')
-    .select('id,filename').eq('case_id',caseId).in('id',ids).limit(4);
-  if(docError || !docRows || docRows.length!==ids.length)
-    return res.status(403).json({error:'Algún documento no pertenece a este expediente.'});
+  const ids=inputIds as string[] | undefined;
+  let documentsQuery=auth.supabase.from('applicant_case_documents')
+    .select('id,filename').eq('case_id',caseId)
+    .order('created_at',{ascending:false}).limit(30);
+  if(ids?.length)documentsQuery=documentsQuery.in('id',ids);
+  const {data:docRows,error:docError}=await documentsQuery;
+  if(docError || !docRows || !docRows.length ||
+    (ids && docRows.length!==ids.length))
+    return res.status(403).json({error:'No hay documentos autorizados para este simulacro.'});
   const pieces=await Promise.all(docRows.map(async doc => {
     const {data,error}=await auth.supabase.from('applicant_case_document_chunks')
       .select('content').eq('case_id',caseId).eq('document_id',doc.id)
