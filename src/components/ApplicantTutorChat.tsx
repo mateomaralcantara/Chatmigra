@@ -205,7 +205,7 @@ export default function ApplicantTutorChat() {
       if(!mountedRef.current || activeCaseRef.current!==id) return;
       const progress=resumeConsularInterview(history,payload.questions);
       if(progress.completed){
-        setNotice('Este simulacro ya terminó. Pulsa «Reiniciar simulacro» para practicar nuevamente.');
+        setNotice('Este simulacro ya terminó. Pulsa «Iniciar simulacro» para practicar nuevamente.');
         return;
       }
       const run:SimulatorRun={
@@ -401,7 +401,7 @@ export default function ApplicantTutorChat() {
         throw new Error(payload.error || 'No se pudo preparar el simulacro.');
       if(activeCaseRef.current!==currentCase)return;
       stopVoice();
-        const run:SimulatorRun={
+      const run:SimulatorRun={
         questions:payload.questions,index:0,attempts:0,
         alerts:payload.alerts||[],excluded:payload.excluded||[],unindexed:payload.unindexed||[],
       };
@@ -453,7 +453,7 @@ export default function ApplicantTutorChat() {
       if (!voiceOnRef.current || activeCaseRef.current !== forCase) { setSpeaking(false); return; }
       if (index >= segments.length) {
         setSpeaking(false);
-        // When the guided interview finishes and there is no document for
+        // When the document-grounded interview finishes and there is no document for
         // free questions, do not leave the microphone listening indefinitely.
         if (!simulatorRef.current && !simulatorRef.current && !selectedDocs.length) {
           stopVoice();
@@ -972,7 +972,7 @@ export default function ApplicantTutorChat() {
         {mode === 'chat' ? (
           <form className="cm-composer cm-tutor-composer" onSubmit={send}>
             <button type="button" className="cm-composer-plus" aria-label="Subir documentos" title="Subir documentos" onClick={() => fileRef.current?.click()} disabled={!caseId || loading}>+</button>
-            <textarea aria-label={guided ? 'Responder al Tutor' : 'Preguntar sobre los documentos'} rows={1} value={question} disabled={!caseId || loading}
+            <textarea aria-label={simulator ? 'Responder al entrevistador' : 'Preguntar sobre los documentos'} rows={1} value={question} disabled={!caseId || loading}
               onChange={event => setQuestion(event.target.value)}
               onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if (question.trim()) void askQuestion(question, false); } }}
               placeholder={simulator ? 'Responde la pregunta del entrevistador…' : 'Consulta sobre los documentos del expediente…'} />
