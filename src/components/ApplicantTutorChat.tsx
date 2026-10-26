@@ -820,7 +820,11 @@ export default function ApplicantTutorChat() {
         .lt('created_at',before).order('created_at',{ascending:false}).limit(100);
       if (err) throw err;
       const older = (data || []) as MessageRow[];
-      setMessages(current => [...older.reverse(), ...current]);
+      if (simulatorRef.current || previousMessages.length) {
+        setPreviousMessages(current => [...older.reverse(), ...current]);
+      } else {
+        setMessages(current => [...older.reverse(), ...current]);
+      }
       setOlderAvailable(older.length === 100);
     } catch { setError('No se pudo recuperar el historial anterior.'); }
     finally { setLoading(false); }
@@ -956,7 +960,7 @@ export default function ApplicantTutorChat() {
           <input ref={fileRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" className="cm-expediente-file-input" onChange={event => void uploadDocument(event)} disabled={!caseId || loading} aria-label="Subir documentos al expediente" />
           <button type="button" className="cm-tutor-upload" onClick={() => fileRef.current?.click()} disabled={!caseId || loading}>＋ Subir documentos</button>
           <button type="button" className="cm-tutor-upload" onClick={() => void startSimulator()}
-            disabled={!caseId || !docs.length || loading || Boolean(simulator)}>
+            disabled={!caseId || !docs.length || loading || Boolean(simulator) || !indexedIds.length}>
             🎓 Iniciar simulacro (19 módulos)
           </button>
           {simulator && <button type="button" className="cm-tutor-upload"
