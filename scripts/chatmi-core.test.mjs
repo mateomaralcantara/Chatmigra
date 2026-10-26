@@ -293,7 +293,7 @@ test('case voice waits for complete free questions and accepts brief interview r
   assert.match(tutor, /engine\.interimResults = true/);
   assert.match(tutor, /const submitRecognizedQuestion/);
   assert.match(tutor, /simulatorRef\.current \? 1 : 3/);
-  assert.match(tutor, /scheduleQuestion\(simulatorRef\.current \? 850 : 1400\)/);
+  assert.match(tutor, /scheduleQuestion\(\(?simulatorRef\.current\)? \? 850 : 1400\)/);
   assert.match(tutor, /voiceSessionRef\.current = phrase/);
   assert.match(tutor, /engine\.stop\(\)/);
   assert.match(tutor, /void askQuestion\(complete, true\)/);
