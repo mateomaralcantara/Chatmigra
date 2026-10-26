@@ -190,6 +190,8 @@ export default async function handler(req: Request, res: Response) {
       try { await finalize(startedModel ? 3000 : 0); } catch { /* no API key or quota detail in response */ }
     }
     await admin.from('applicant_case_document_chunks').delete().eq('document_id',documentId);
+    await admin.from('applicant_case_facts').delete()
+      .eq('document_id',documentId).eq('verification_status','pending_review');
     await admin.from('applicant_case_index_jobs').update({
       status:'failed',completed_at:new Date().toISOString()
     }).eq('document_id',documentId);
