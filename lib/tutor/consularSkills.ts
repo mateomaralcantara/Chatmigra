@@ -189,12 +189,12 @@ export function evaluateConsularAnswer(
   attempts:number,
 ):InterviewGrade {
   const spoken=answer.trim();
-  if(!spoken || norm(spoken).length<2)
+  if(!spoken || (norm(spoken).length<2 && !(item.id==='visa' && norm(spoken)==='i')))
     return {outcome:'clarify',feedback:'No escuché una respuesta completa. Te pregunto de nuevo.',repeat:true};
   if(item.method==='explanation' &&
       /foreign media representative/.test(norm(item.expected||''))) {
     if(/\b(?:turism\w*|vacacion\w*|paseo|compras)\b/i.test(norm(spoken)) ||
-      !/\b(prensa|periodismo|periodista|cobertura|reporter|corresponsal|medios|noticias|entrevista|congreso)\b/i.test(norm(spoken))) {
+      !/\b(?:prensa|periodism\w*|periodist\w*|cobertura|reporter\w*|corresponsal\w*|medios|noticias|entrevista\w*|congreso)\b/i.test(norm(spoken))) {
       return {outcome:attempts>=2?'review':'retry',
         feedback:'El documento indica una categoría de representante de medios. Tu respuesta no explica claramente esa actividad. Si el propósito real es otro, hay que revisar el DS-160, no inventar una explicación. '+(attempts<2?'¿Puedes aclararlo?':'Revisaremos este punto.'),
         repeat:attempts<2};
