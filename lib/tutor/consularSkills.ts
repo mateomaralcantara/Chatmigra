@@ -340,6 +340,9 @@ export function evaluateConsularAnswer(
     return askClarify('No pude escuchar tu respuesta. Inténtalo de nuevo.',attempts);
   if(NON_ANSWER.test(a))
     return askClarify('Si no recuerdas el dato, podemos marcarlo para revisar. ¿Quieres intentarlo otra vez?',attempts);
+  if(['si','no','ok','bien'].includes(a) &&
+     !['history','family','closing'].includes(item.id) && item.method!=='yesno')
+    return askClarify('Necesito saber a qué te refieres. Puedes responder en tus propias palabras, sin repetir el documento.',attempts);
 
   // Personal names: two supported components (one given, one surname)
   // suffice. Do not reject because of middle names, accents or order.
@@ -361,6 +364,11 @@ export function evaluateConsularAnswer(
   // Category synonyms and natural-language explanations of media activity.
   if(item.id==='visa' && /foreign media representative|representante de medios/.test(expected) &&
      /^(?:i|visa i|visa tipo i|visa de periodista|periodista|representante de medios(?: extranjeros)?|periodismo|para periodismo|medios de comunicacion)$/i.test(a))return accepted();
+
+  if(item.id==='visa' && item.expected &&
+     /foreign media representative|representante de medios/.test(expected) &&
+     /\b(?:visa\s*)?(?:b\s*1|b\s*2|f\s*1|j\s*1|h\s*1|turismo|vacaciones)\b/.test(a))
+    return conflict(item,attempts);
 
   // Dates are material. Recognize natural Spanish and English month names,
   // and allow day + month when the year was not asked explicitly.
