@@ -50,6 +50,29 @@ function recognitionConstructor(): (new () => RecognitionEngine) | undefined {
   return w.SpeechRecognition || w.webkitSpeechRecognition;
 }
 
+// A short field lookup should never expose Gemini's unsolicited source,
+// heading, or duplicated date translations. Complex questions remain intact.
+function exactFactReply(question: string, response: string): string {
+  const q = question.trim().toLocaleLowerCase('es');
+  const directField = q.length <= 160 &&
+    !/\b(explica|analiza|compara|revisa|evalúa|evalua|resumen|detalla|razones|por qué|requisitos|procedimiento|informe|pasos|lista|varios datos)\b/i.test(q) &&
+    /\b(fecha de nacimiento|nombre(?: completo)?(?: del aplicante| del solicitante)?|nacionalidad|tipo de visa|qué visa|cual visa|cuál visa|país de destino)\b/i.test(q);
+  const raw = response.trim();
+  if (!directField || !raw) return raw;
+  let cleaned = raw.replace(/\s*(?:\*\*)?(?:Fuente|Referencia|Fuentes|Sources)(?:\*\*)?\s*:[\s\S]*$/i, '').trim();
+  if (/no consta|no se encuentra|no se puede determinar|contradic|discrepan/i.test(cleaned)) return cleaned;
+  if (/\bfecha de nacimiento\b/i.test(q)) {
+    const spanishDates = [...cleaned.matchAll(/\b\d{1,2}\s+de\s+[a-záéíóúñ]+\s+de\s+\d{4}\b/gi)];
+    if (spanishDates.length === 1) return spanishDates[0][0];
+    const numericDates = [...cleaned.matchAll(/\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})\b/g)];
+    if (numericDates.length === 1) return numericDates[0][0];
+  }
+  cleaned = cleaned.replace(/^\s*(?:según (?:el perfil|los documentos|el expediente),?\s*)/i, '');
+  cleaned = cleaned.replace(/^(?:la|el|su)\s+(?:fecha de nacimiento(?: de (?:la|el) aplicante)?|nombre(?: completo)?|nacionalidad|tipo de visa|visa solicitada|país de destino)\s+(?:es|corresponde a|:)\s*(?:el\s+|la\s+)?/i, '');
+  cleaned = cleaned.replace(/\s*\(\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}\s*\)\s*\.?$/i, '');
+  return cleaned.trim();
+}
+
 export default function ApplicantTutorChat() {
   const [mode, setMode] = useState<Mode>('chat');
   const [cases, setCases] = useState<CaseRow[]>([]);
@@ -347,7 +370,7 @@ export default function ApplicantTutorChat() {
           catch { throw new Error('La transmisión devolvió un mensaje inválido.'); }
           if (frame.type === 'delta' && typeof frame.text === 'string') {
             responseText += frame.text;
-            show(responseText);
+            show(exactFactReply(text, responseText));
           } else if (frame.type === 'done') {
             sawDone = true;
             complete = frame.complete === true;
@@ -377,13 +400,16 @@ export default function ApplicantTutorChat() {
         const data: { text?: string; complete?: boolean } = await result.json().catch(() => ({}));
         responseText = data.text || '';
         complete = data.complete !== false;
-        show(responseText);
+        show(exactFactReply(text, responseText));
       }
       if (!responseText.trim()) throw new Error('Gemini no devolvió una respuesta legible.');
+      const finalReply = exactFactReply(text, responseText);
+      if (!finalReply) throw new Error('Gemini no devolvió el dato solicitado.');
+      show(finalReply);
       const user = await loggedInUser();
       // Split long model text into adjacent stored parts so the 15k row
       // constraint never silently cuts the answer or loses the continuation.
-      const answerParts = responseText.match(/[\s\S]{1,14000}/g) || [];
+      const answerParts = finalReply.match(/[\s\S]{1,14000}/g) || [];
       const { error: saveError } = await supabase.from('applicant_case_messages').insert([
         { case_id: queriedCase, created_by: user.id, role: 'user', content: text.slice(0, 15000) },
         ...answerParts.map(content => ({
@@ -395,7 +421,7 @@ export default function ApplicantTutorChat() {
       setQuestion('');
       setReplyIncomplete(!complete);
       if (!complete) setNotice('Gemini alcanzó su límite de generación. Puedes pulsar «Continuar respuesta» para completar el análisis.');
-      if (spoken && voiceOnRef.current) readAnswerAloud(responseText, queriedCase);
+      if (spoken && voiceOnRef.current) readAnswerAloud(finalReply, queriedCase);
     } catch (e) {
       if (mountedRef.current && activeCaseRef.current === queriedCase) {
         // Uncommitted partial output is not presented as a saved, complete answer.
