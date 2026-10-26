@@ -271,7 +271,7 @@ test('tutor streams full authenticated answers and flags incomplete generations'
   assert.match(tutor, /sawDone/);
   assert.match(tutor, /setReplyIncomplete\(!complete\)/);
   assert.match(tutor, /Continuar respuesta/);
-  assert.match(tutor, /responseText\.match/);
+  assert.match(tutor, /finalReply\.match/);
   assert.doesNotMatch(tutor, /content: responseText\.slice\(0, 15000\)/);
 });
 
