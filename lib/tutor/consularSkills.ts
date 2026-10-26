@@ -33,7 +33,7 @@ export type PreparedQuestion = {
 };
 
 export const CONSULAR_SKILLS: readonly ConsularSkill[] = [
-  {id:'identity',title:'Identificación personal',method:'exact',field:'fullName',question:'¿Cuál es tu nombre completo, tal como figura en la solicitud?',objective:'Identidad del solicitante',correction:'Compara los nombres con la solicitud y el pasaporte.'},
+  {id:'identity',title:'Identificación personal',method:'exact',field:'fullName',question:'¿Cómo te llamas? Basta con un nombre y un apellido.',objective:'Identidad del solicitante',correction:'Compara los nombres con la solicitud y el pasaporte.'},
   {id:'birth',title:'Nacimiento y nacionalidad',method:'date',field:'birthDate',question:'¿Cuál es tu fecha de nacimiento?',objective:'Precisar el dato biográfico',correction:'Comprueba la fecha en el documento de identidad.'},
   {id:'passport',title:'Pasaporte y vigencia',method:'exact',field:'passportNumber',question:'¿Cuál es el número de tu pasaporte vigente?',objective:'Confirmar identidad documental',correction:'Revisa los caracteres del pasaporte original.'},
   {id:'residence',title:'Domicilio de residencia',method:'document',field:'homeAddress',question:'¿Dónde vives actualmente?',objective:'Comprobar coherencia del domicilio declarado sin exigir recitar la dirección completa',correction:'Basta describir la calle o sector y la ciudad; si cambiaste de domicilio debes indicarlo.'},
@@ -105,7 +105,7 @@ export function assembleConsularEvidence(
     fullName:[label('(?:Name Provided|Full Name in Native Language|nombre completo|nombre proporcionado|nombre de la solicitante)')],
     birthDate:[label('(?:Date of Birth|Fecha de nacimiento)')],
     passportNumber:[label('(?:Passport\\/Travel Document Number|Passport Number|número de pasaporte|numero de pasaporte|documento de viaje|PASS|PASAPORTE)')],
-    homeAddress:[label('(?:Home Address|Home Street Address|Street Address \\(1\\)|Dirección de domicilio|Direcci[oó]n residencial|Dirección actual|Domicilio actual)')],
+    homeAddress:[label('(?:Home Address|Home Street Address|Dirección de domicilio|Direcci[oó]n residencial|Dirección actual|Domicilio actual)')],
     visaType:[label('(?:Purpose of Trip to the U\\.S\\. \\(1\\)|Visa Type|Tipo de visa|propósito del viaje a estados unidos|proposito del viaje a estados unidos)')],
     arrivalDate:[label('(?:Date of Arrival in U\\.S\\.|Fecha de llegada|fecha de ingreso)')],
     departureDate:[label('(?:Date of Departure from U\\.S\\.|Fecha de salida|fecha de regreso)')],
@@ -184,6 +184,11 @@ export function resumeConsularInterview(
   questions:PreparedQuestion[],
 ): {index:number;attempts:number;pending:boolean;completed:boolean;started:boolean} {
   const byQuestion = new Map(questions.map((item,index)=>[item.question,index]));
+  // Preserve interview progress for sessions created before the relaxed prompt.
+  const identityIndex = questions.findIndex(item=>item.id==='identity');
+  if(identityIndex>=0)byQuestion.set(
+    '¿Cuál es tu nombre completo, tal como figura en la solicitud?',identityIndex
+  );
   let index=0, attempts=0, pending=false, started=false, completed=false;
   for(const message of history) {
     if(message.role==='model' && message.content===CONSULAR_FINISHED) {
