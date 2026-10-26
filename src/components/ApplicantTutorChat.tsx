@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEv
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { supabase } from '../services/supabaseClient';
-import { naturalSpanishSpeech } from '../../lib/tutor/interview';
+import { naturalSpanishSpeech, isInterviewQuestion } from '../../lib/tutor/interview';
 import { evaluateConsularAnswer, resumeConsularInterview, CONSULAR_FINISHED, type PreparedQuestion } from '../../lib/tutor/consularSkills';
 
 type CaseRow = { id: string; applicant_name: string; owner_id: string; nationality: string; destination: string; visa_type: string };
@@ -172,7 +172,12 @@ export default function ApplicantTutorChat() {
       return (existing.length ? existing : fileRows.slice(0, 4).map(f => f.id)).slice(0, 4);
     });
     const history = ((conversation.data || []) as MessageRow[]).reverse();
-    setMessages(history);
+    // Retire an unanswered legacy intake question from the visible thread,
+    // without deleting or rewriting private database history.
+    const last = history[history.length-1];
+    const displayHistory = last?.role==='model' && isInterviewQuestion(last.content)
+      ? history.slice(0,-1) : history;
+    setMessages(displayHistory);
     setOlderAvailable(history.length === 100);
     // The consular simulator, grounded in this applicant's indexed documents,
     // takes priority over every legacy generic intake prompt.
@@ -220,7 +225,7 @@ export default function ApplicantTutorChat() {
       // Previous messages from the old generic interview remain in history,
       // but must never drive or replace this first consular question.
       const prompt=run.questions[run.index].question;
-      setMessages([...history,{role:'model',content:prompt}]);
+      setMessages([...displayHistory,{role:'model',content:prompt}]);
       const {error:saveError}=await supabase.from('applicant_case_messages').insert({
         case_id:id,created_by:loggedUserRef.current,role:'model',content:prompt,
       });
@@ -231,7 +236,7 @@ export default function ApplicantTutorChat() {
     } catch(error){
       if(mountedRef.current && activeCaseRef.current===id) {
         simulatorRef.current=null;setSimulator(null);
-        setMessages(history);
+        setMessages(displayHistory);
         setError(error instanceof Error ? error.message : 'No se pudo iniciar el simulacro.');
       }
     } finally {
@@ -483,6 +488,10 @@ export default function ApplicantTutorChat() {
     if (!text || !caseId || busyRef.current) return;
     // Consular simulator: assess only against case-specific indexed evidence.
     // No Gemini calls for corrections and repetitions.
+    if(startingSimulatorCasesRef.current.has(caseId)) {
+      setNotice('El Tutor está preparando las preguntas basadas en tus documentos.');
+      return;
+    }
     if(simulatorRef.current) {
       const currentRun=simulatorRef.current;
       const item=currentRun.questions[currentRun.index];
