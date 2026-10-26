@@ -581,7 +581,7 @@ test('guided Tutor starts the interview and automatically asks every next questi
 
 });
 
-test('19 consular modules generate source-grounded questions without mixing applicants', () => {
+test('consular modules generate source-grounded questions without mixing applicants', () => {
   const src=read('lib/tutor/consularSkills.ts');
   const output=ts.transpileModule(src,{
     compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
@@ -628,7 +628,7 @@ test('19 consular modules generate source-grounded questions without mixing appl
   assert.equal(wrong.outcome,'retry');
   assert.equal(wrong.repeat,true);
   assert.equal(evaluateConsularAnswer(passport,'RD0000000',2).outcome,'review');
-  assert.equal(evaluateConsularAnswer(plan.questions.find(q=>q.id==='purpose'),'Por una misión periodística',0).outcome,'review');
+  assert.equal(evaluateConsularAnswer(plan.questions.find(q=>q.id==='purpose'),'Por una misión periodística',0).outcome,'correct');
 });
 
 test('consular simulator is private, agent-led, handles corrections and never reveals other-case chunks',()=>{
@@ -648,7 +648,7 @@ test('consular simulator is private, agent-led, handles corrections and never re
   assert.match(tutor,/grade\.repeat/);
   assert.match(tutor,/simulatorRef\.current=nextRun/);
   assert.match(tutor,/readAnswerAloud\(feedback\+' '\+nextPrompt,activeId\)/);
-  assert.match(tutor,/Iniciar simulacro \(19 módulos\)/);
+  assert.match(tutor,/Iniciar simulacro \(\{CONSULAR_SKILLS\.length\} módulos\)/);
 });
 
 test('Tutor opens consular interview automatically and resumes without legacy priority prompt',()=>{
@@ -718,4 +718,58 @@ test('document-backed interview starts only when prepared; voice cannot silently
   assert.match(ui,/successes > 0 && !simulatorRef\.current\) void refreshCase\(caseId\)/);
   assert.match(ui,/⚡ Preparar y comenzar simulacro/);
   assert.match(ui,/fetch\('\/api\/applicant-simulator'/);
+});
+
+test('consular Tutor understands conversational summaries instead of requiring word-for-word DS-160', () => {
+  const source=read('lib/tutor/consularSkills.ts');
+  const compiled=ts.transpileModule(source,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+  }).outputText;
+  const sandbox={module:{exports:{}}};sandbox.exports=sandbox.module.exports;
+  vm.runInNewContext(compiled,sandbox);
+  const {evaluateConsularAnswer,CONSULAR_SKILLS}=sandbox.module.exports;
+  const grade=(id,expected,answer,method='document',attempts=0)=>evaluateConsularAnswer({
+    id,skill:id,title:id,method,question:'Caso sintético',
+    expected,source:'documento-prueba',status:expected?'document':'practice',explanation:'',
+  },answer,attempts);
+  const good=(id,expected,answer,method='document')=>{
+    const response=grade(id,expected,answer,method);
+    assert.equal(response.repeat,false,id+' should accept conversational answer: '+answer);
+    assert.ok(response.outcome==='correct'||response.outcome==='review');
+    assert.doesNotMatch(response.feedback,/Te lo preguntaré nuevamente|no coincide/i);
+  };
+
+  assert.ok(CONSULAR_SKILLS.some(skill=>skill.id==='residence'));
+  assert.equal(CONSULAR_SKILLS.length,20);
+  good('identity','PAREDES ROSARIO, YAENQUI MARIEL','Yaenqui Paredes','exact');
+  good('identity','PAREDES ROSARIO, YAENQUI MARIEL','Mariel Rosario','exact');
+  good('identity','PAREDES ROSARIO, YAENQUI MARIEL','Paredes Yaenqui','exact');
+  good('residence','Calle 5 Número 10, Santo Domingo Este, República Dominicana',
+    'calle cinco numero diez santo domingo');
+  good('residence','Calle 5 Número 10, Santo Domingo Este','Santo Domingo');
+  good('residence',null,'vivo en la calle cinco, santo domingo');
+  good('address','Calle 70, Hazleton Pennsylvania','Hazleton');
+  good('purpose','FOREIGN MEDIA REPRESENTATIVE (I)','Voy a un congreso de periodismo','explanation');
+  good('purpose','FOREIGN MEDIA REPRESENTATIVE (I)','Asistiré a un evento profesional','explanation');
+  good('journalism','FOREIGN MEDIA REPRESENTATIVE (I)','Voy a una conferencia','explanation');
+  good('invitation','Alianza Internacional de Periodismo (AIPMA)','Me invitaron a un evento');
+  good('invitation','Alianza Internacional de Periodismo (AIPMA)','Voy a un congreso');
+  good('dates','23 SEPTEMBER 2026','23 de septiembre','date');
+  good('birth','21 MARCH 1983','21 de marzo de 1983','date');
+  good('occupation','JOURNALIST','Soy periodista','exact');
+  good('funding','SELF','Yo','exact');
+  good('history','NO','No','yesno');
+  good('family',null,'No tengo familiares');
+  good('unexpected',null,'Trabajo en prensa','practice');
+
+  assert.equal(grade('identity','PAREDES ROSARIO, YAENQUI MARIEL','Juan Pérez','exact').outcome,'retry');
+  assert.equal(grade('identity','PAREDES ROSARIO, YAENQUI MARIEL','Yaenqui','exact').outcome,'clarify');
+  assert.equal(grade('passport','RD999000','RD888000','exact').outcome,'retry');
+  assert.equal(grade('dates','23 SEPTEMBER 2026','25 de septiembre de 2026','date').outcome,'retry');
+  assert.equal(grade('residence','Santo Domingo','Vivo en Santiago').outcome,'retry');
+  assert.equal(grade('occupation','JOURNALIST','Soy abogado','exact').outcome,'retry');
+  assert.equal(grade('purpose','FOREIGN MEDIA REPRESENTATIVE (I)','Voy de vacaciones','explanation').outcome,'retry');
+  assert.equal(grade('passport','RD999000','RD888000','exact',2).outcome,'review');
+  assert.equal(grade('invitation','AIPMA','No sé').outcome,'clarify');
+  assert.equal(grade('invitation','AIPMA','No sé','document',2).repeat,false);
 });
