@@ -264,7 +264,7 @@ test('tutor streams full authenticated answers and flags incomplete generations'
   assert.match(api, /Promise\.all\(docs\.map\(async \(doc\)/);
   assert.match(api, /thinkingLevel: 'low'/);
   assert.match(api, /quickCaseFact\(lastQuestion, applicantCase\)/);
-  assert.match(api, /verified-case-profile/);
+  assert.match(api, /route:'user-profile'/);
   assert.match(tutor, /stream: true/);
   assert.match(tutor, /result\.body\.getReader\(\)/);
   assert.match(tutor, /frame\.type === 'delta'/);
@@ -463,4 +463,34 @@ test('Tutor gives exactly the requested fact without unsolicited sources in Chat
   );
   assert.match(tutor, /show\(exactFactReply\(text, responseText\)\)/);
   assert.match(tutor, /readAnswerAloud\(finalReply, queriedCase\)/);
+});
+
+test('tutor fast-fact router uses ONLY verified case facts before Gemini', () => {
+  const facts = read('lib/tutor/facts.ts');
+  const sql = read('supabase/setup/chatmi-applicant-tutor-facts.sql');
+  const api = read('api/gemini.ts');
+  const index = read('api/applicant-index.ts');
+  const ui = read('src/components/ApplicantTutorChat.tsx');
+  assert.match(sql, /create table if not exists public\.applicant_case_facts/);
+  assert.match(sql, /alter table public\.applicant_case_facts enable row level security/);
+  assert.match(sql, /revoke all on public\.applicant_case_facts from public, anon, authenticated/);
+  assert.match(sql, /grant update\(verification_status,verified_by,verified_at\)/);
+  assert.match(sql, /where c\.id = case_id and c\.owner_id = \(select auth\.uid\(\)\)/);
+  assert.match(sql, /verification_status = 'verified'/);
+  assert.doesNotMatch(sql, /security definer/i);
+  assert.match(facts, /export function directFactKey/);
+  assert.match(facts, /export function extractCaseFactCandidates/);
+  assert.match(facts, /date_of_birth/);
+  assert.match(index, /extractCaseFactCandidates\(output\)/);
+  assert.match(index, /verification_status:'pending_review'/);
+  assert.match(api, /directFactKey\(lastQuestion\)/);
+  assert.match(api, /auth\.supabase[\s\S]*?\.from\('applicant_case_facts'\)/);
+  assert.match(api, /\.eq\('verification_status','verified'\)/);
+  assert.match(api, /route: 'verified-fact'/);
+  assert.match(api, /route: 'verified-fact-conflict'/);
+  assert.match(api, /quickCaseFact\(lastQuestion, applicantCase\)/);
+  assert.match(ui, /const reviewFact = async/);
+  assert.match(ui, /Solo el titular del expediente puede verificar sus datos/);
+  assert.match(ui, /Confirmar<\/button>/);
+  assert.match(ui, /Rechazar<\/button>/);
 });
