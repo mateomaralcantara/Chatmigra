@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { directFactKey } from '../lib/tutor/facts';
 import { readServerEnv } from '../server/env';
 import {
   getAdminSupabase,
@@ -311,13 +312,48 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         return res.status(403).json({ error: 'No tienes acceso a ese expediente.' });
       }
 
-      // A trusted, RLS-checked structured answer is faster and cheaper than
-      // downloading PDFs or asking Gemini for an existing case-profile field.
       const lastQuestion = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+      // Verify selection even when the answer can be served without a model.
+      const earlyDocumentIds = Array.isArray(body.documentIds) ? body.documentIds as unknown[] : null;
+      if (earlyDocumentIds && (earlyDocumentIds.length > CASE_FILE_LIMIT ||
+          earlyDocumentIds.some(id => typeof id !== 'string' || !CASE_ID.test(id)) ||
+          new Set(earlyDocumentIds).size !== earlyDocumentIds.length)) {
+        return res.status(400).json({ error: 'Selecciona hasta cuatro documentos diferentes.' });
+      }
+      const field = directFactKey(lastQuestion);
+      if (field) {
+        // Use the caller's RLS-scoped client. Never query verified facts with
+        // service_role, and never expose pending or rejected candidates.
+        const { data: facts, error: factsError } = await auth.supabase
+          .from('applicant_case_facts')
+          .select('fact_value,document_id')
+          .eq('case_id',requestedCaseId).eq('fact_key',field)
+          .eq('verification_status','verified').limit(25);
+        if (!factsError && facts?.length) {
+          const allowed = facts.filter(fact => !fact.document_id ||
+            !earlyDocumentIds || earlyDocumentIds.includes(fact.document_id));
+          const distinct = [...new Set(allowed.map(fact => String(fact.fact_value).trim()).filter(Boolean))];
+          if (distinct.length === 1) {
+            return res.status(200).json({
+              text: distinct[0], model: 'verified-fact-router', route: 'verified-fact',
+              complete: true, quota: { enforced:false, remaining:null },
+            });
+          }
+          if (distinct.length > 1) {
+            return res.status(200).json({
+              text: 'Hay datos contradictorios en el expediente.',
+              model: 'verified-fact-router', route: 'verified-fact-conflict',
+              complete:true, quota:{enforced:false, remaining:null},
+            });
+          }
+        }
+      }
+      // Compatibility: existing user-entered profile fields still work if there
+      // is no reviewed fact. They are NOT labeled as document-verified.
       const quick = quickCaseFact(lastQuestion, applicantCase);
       if (quick) {
         return res.status(200).json({
-          text: quick, model: 'verified-case-profile', complete: true,
+          text: quick, model: 'case-profile', route:'user-profile', complete: true,
           sources: ['Perfil del expediente'],
           quota: { enforced: false, remaining: null },
         });
