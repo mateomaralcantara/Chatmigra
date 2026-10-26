@@ -298,17 +298,19 @@ function knownCity(value:string):string|null {
   }
   return null;
 }
+const OCCUPATIONS:RegExp[]=[
+  /\b(?:periodista|periodismo|reportera?|corresponsal|journalist|reporter)\b/,
+  /\b(?:maestr[oa]|docente|profesor[ae]?|teacher)\b/,
+  /\b(?:abogad[oa]|lawyer|attorney)\b/,
+  /\b(?:medic[oa]|doctor[ae]?|physician)\b/,
+  /\b(?:ingenier[oa]|engineer)\b/,
+  /\b(?:contad[oa]r|accountant)\b/,
+];
+function occupationType(value:string):number {
+  return OCCUPATIONS.findIndex(pattern=>pattern.test(norm(value)));
+}
 function incompatibleOccupation(answer:string,expected:string):boolean {
-  const jobs:RegExp[]=[
-    /\b(?:periodista|periodismo|reportera?|corresponsal|journalist|reporter)\b/,
-    /\b(?:maestr[oa]|docente|profesor[ae]?|teacher)\b/,
-    /\b(?:abogad[oa]|lawyer|attorney)\b/,
-    /\b(?:medic[oa]|doctor[ae]?|physician)\b/,
-    /\b(?:ingenier[oa]|engineer)\b/,
-    /\b(?:contad[oa]r|accountant)\b/,
-  ];
-  const source=jobs.findIndex(pattern=>pattern.test(norm(expected)));
-  const reply=jobs.findIndex(pattern=>pattern.test(norm(answer)));
+  const source=occupationType(expected),reply=occupationType(answer);
   return source>=0 && reply>=0 && source!==reply;
 }
 function accepted(message='Bien, entendido. Continuemos.'):InterviewGrade {
@@ -358,7 +360,13 @@ export function evaluateConsularAnswer(
   // Passport is an identifier; do not guess or semantically approximate it.
   if(item.id==='passport' && item.expected){
     const id=(value:string)=>value.replace(/[^a-zA-Z0-9]/g,'').toUpperCase();
-    return id(spoken)===id(item.expected) ? accepted() : conflict(item,attempts);
+    const expectedId=id(item.expected);
+    const candidates=(spoken.toUpperCase().match(/[A-Z]{1,4}\s*-?\s*\d[\d\s-]{3,14}/g)||[])
+      .map(part=>id(part));
+    // Allow a natural sentence ("mi pasaporte es RD1234567"), but require
+    // an exact identifier match; never accept a partial or different number.
+    return (id(spoken)===expectedId || candidates.some(candidate=>candidate===expectedId))
+      ? accepted() : conflict(item,attempts);
   }
 
   // Category synonyms and natural-language explanations of media activity.
@@ -421,8 +429,11 @@ export function evaluateConsularAnswer(
       return conflict(item,attempts);
   }
 
-  if(item.id==='occupation' && item.expected &&
-     incompatibleOccupation(spoken,item.expected))return conflict(item,attempts);
+  if(item.id==='occupation' && item.expected){
+    if(incompatibleOccupation(spoken,item.expected))return conflict(item,attempts);
+    if(occupationType(spoken)>=0 && occupationType(spoken)===occupationType(item.expected))
+      return accepted();
+  }
 
   // Other document-backed questions are assessed for meaningful overlap,
   // not a fixed word count or literal reproduction. Ambiguity is noted
