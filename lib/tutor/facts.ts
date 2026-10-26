@@ -20,12 +20,12 @@ function simple(text: string): string {
 export function directFactKey(question: string): CaseFactKey | null {
   if (question.length < 5 || question.length > 160) return null;
   const q=simple(question);
-  if (/\b(analiza|explica|revisa|verifica|compara|comparacion|contradiccion|informe|diferencia|porque|por que|detalles|varios|lista|ambos|y tambien|ademas|documento|carta|fuente|pagina)\b/i.test(q)) return null;
+  if (/\b(explic|analiz|revis|verific|compar|contradic|inform|diferenc|porque|por que|detall|varios|lista|ambos|ademas|documento|carta|fuente|pagina)/i.test(q) ||
+      /\s+y\s+/.test(q)) return null;
   const matched = FIELDS.filter(field => {
-    const pattern = new RegExp(simple(field.pattern.source).replace(/\\/g,'\\'),'i');
-    // Existing regular expressions use accented character alternatives. Run those
-    // against the original question to preserve meaning (and the \b boundaries).
-    return field.pattern.test(question) || pattern.test(q);
+    // Accent-insensitive comparison; never allow ambiguous multi-field routing.
+    const normalizedPattern = new RegExp(simple(field.pattern.source),'i');
+    return field.pattern.test(question) || normalizedPattern.test(q);
   });
   return matched.length === 1 ? matched[0].key : null;
 }
