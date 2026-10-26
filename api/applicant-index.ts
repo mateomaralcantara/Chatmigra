@@ -1,4 +1,5 @@
 import { readServerEnv } from '../server/env';
+import { extractCaseFactCandidates } from '../lib/tutor/facts';
 import { getAdminSupabase, requireAuthenticatedUser, type RequestLike } from '../server/supabase';
 
 interface Request extends RequestLike { method?: string; body?: unknown }
@@ -150,6 +151,21 @@ export default async function handler(req: Request, res: Response) {
         case_id:doc.case_id,document_id:doc.id,chunk_index:i,content
       })));
     if (insertError) throw new Error('INDEX_SAVE_FAILED');
+    // Suggestions are NEVER trusted automatically. Only an owner may change
+    // pending_review to verified via the RLS-protected review action.
+    const proposed = extractCaseFactCandidates(output);
+    if (proposed.length) {
+      const { error: suggestionsError } = await admin.from('applicant_case_facts')
+        .upsert(proposed.map(item => ({
+          case_id:doc.case_id, document_id:doc.id, fact_key:item.fact_key,
+          fact_value:item.fact_value, verification_status:'pending_review',
+        })), {
+          onConflict:'case_id,document_id,fact_key,fact_value',
+          ignoreDuplicates:true,
+        });
+      // Backward compatible until the optional facts SQL is installed.
+      if (suggestionsError) console.warn('[tutor-index] Candidate memory unavailable:', suggestionsError.code);
+    }
     const {error:jobError} = await admin.from('applicant_case_index_jobs')
       .update({status:'ready',completed_at:new Date().toISOString()})
       .eq('document_id',doc.id);
