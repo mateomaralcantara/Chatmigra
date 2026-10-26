@@ -388,8 +388,12 @@ export default function ApplicantTutorChat() {
       if (activeCaseRef.current === caseId) {
         setIndexedIds((ready||[]).map(row=>String(row.document_id)));
         if (!factResponse.error) setFacts((factResponse.data||[]) as FactRow[]);
-        setNotice(successes + ' documento(s) preparados. El Tutor está iniciando el simulacro consular.');
-        if (failures.length) setError(failures.join(' | ').slice(0,900));
+        if (successes > 0) {
+          setNotice(successes + ' documento(s) preparados. El Tutor está iniciando el simulacro consular.');
+        } else if (failures.length) {
+          setNotice('No se pudo preparar ningún documento. Resuelve el error indicado y vuelve a intentarlo.');
+        }
+        if (failures.length) setError([...new Set(failures)].join(' | ').slice(0,900));
         if (successes > 0 && !simulatorRef.current) void refreshCase(caseId);
       }
     } catch (error) {
