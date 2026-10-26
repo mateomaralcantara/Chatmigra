@@ -3,6 +3,26 @@
 **Estado:** funcionalidad codificada en rama de desarrollo; activar después de \`npm run check\`
 y las pruebas de documentos, RLS, Chat y Voz. No subir expedientes reales a GitHub.
 
+## Corrección del formato inicial — agente consular primero
+
+**Predeterminado en Tutor Personal:** al seleccionar un expediente con al menos
+un documento indexado, el Tutor abre automáticamente el simulacro consular de
+19 módulos. La primera pregunta es «¿Cuál es tu nombre completo, tal como figura
+en la solicitud?», no «¿Qué aspecto de tu expediente te preocupa más?».
+
+Si hay una pregunta consular sin contestar, la reanuda sin volver a insertarla.
+El historial genérico anterior se conserva en Supabase pero deja de dirigir
+entrevistas nuevas; su última pregunta genérica pendiente se oculta de la vista.
+
+Si los documentos no están indexados, la interfaz pide «Preparar búsqueda rápida»
+antes de iniciar un simulacro basado en evidencias. **No se lanza procesamiento
+pagado sin intervención.** Una vez terminada la preparación, vuelve a cargar
+el expediente e intenta iniciar el simulacro automáticamente.
+
+Chat y Voz usan la misma pregunta y el mismo evaluador. El navegador necesita
+el gesto de pulsar «Iniciar voz» para hablar en voz alta. No se requieren
+nuevas tablas SQL.
+
 ## Flujo de aprendizaje dirigido
 
 Documentos privados autorizados → indexar una sola vez con cuota consentida
