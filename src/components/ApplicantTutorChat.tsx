@@ -3,7 +3,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { supabase } from '../services/supabaseClient';
 
-type CaseRow = { id: string; applicant_name: string };
+type CaseRow = { id: string; applicant_name: string; owner_id: string };
+type FactRow = { id:string; fact_key:string; fact_value:string; document_id:string|null; verification_status:'pending_review'|'verified'|'rejected' };
 type DocRow = { id: string; filename: string; mime_type: string; storage_path: string; created_at: string };
 type MessageRow = { id?: string; role: 'user' | 'model'; content: string; created_at?: string };
 type Mode = 'chat' | 'voice';
@@ -79,6 +80,8 @@ export default function ApplicantTutorChat() {
   const [caseId, setCaseId] = useState(currentCaseId);
   const [docs, setDocs] = useState<DocRow[]>([]);
   const [indexedIds, setIndexedIds] = useState<string[]>([]);
+  const [facts, setFacts] = useState<FactRow[]>([]);
+  const [currentUserId, setCurrentUserId] = useState('');
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [question, setQuestion] = useState('');
@@ -107,9 +110,10 @@ export default function ApplicantTutorChat() {
   useEffect(() => { messagesRef.current = messages; endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages]);
 
   const refreshCases = useCallback(async (preferred?: string) => {
-    await loggedInUser();
+    const signedIn = await loggedInUser();
+    setCurrentUserId(signedIn.id);
     const { data, error: queryError } = await supabase.from('applicant_cases')
-      .select('id,applicant_name').order('created_at', { ascending: false });
+      .select('id,applicant_name,owner_id').order('created_at', { ascending: false });
     if (queryError) throw new Error('No se pudieron cargar tus expedientes. Revisa la instalación de Supabase.');
     const rows = (data || []) as CaseRow[];
     if (!mountedRef.current) return;
@@ -123,7 +127,7 @@ export default function ApplicantTutorChat() {
   }, []);
 
   const refreshCase = useCallback(async (id: string) => {
-    if (!id) { setDocs([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false); return; }
+    if (!id) { setDocs([]); setFacts([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false); return; }
     const [files, conversation] = await Promise.all([
       supabase.from('applicant_case_documents')
         .select('id,filename,mime_type,storage_path,created_at')
@@ -136,6 +140,14 @@ export default function ApplicantTutorChat() {
     if (!mountedRef.current || activeCaseRef.current !== id) return;
     const fileRows = (files.data || []) as DocRow[];
     setDocs(fileRows);
+    // Candidate memory is optional until the new SQL is installed. Never
+    // show an unverified extraction as an accepted answer.
+    const {data: candidates} = await supabase.from('applicant_case_facts')
+      .select('id,fact_key,fact_value,document_id,verification_status')
+      .eq('case_id',id).order('created_at',{ascending:false}).limit(60);
+    if(mountedRef.current && activeCaseRef.current === id) {
+      setFacts((candidates || []) as FactRow[]);
+    }
     // This optional query fails harmlessly until ChatMi's RAG SQL is installed.
     const { data: readyJobs } = await supabase.from('applicant_case_index_jobs')
       .select('document_id,status').eq('case_id',id).eq('status','ready');
@@ -175,7 +187,7 @@ export default function ApplicantTutorChat() {
   useEffect(() => {
     activeCaseRef.current = caseId;
     setError(''); setNotice(''); setTranscript('');
-    setDocs([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false);
+    setDocs([]); setFacts([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false);
     voiceOnRef.current = false; setVoiceOn(false);
     voiceSessionRef.current = '';
     voiceDraftRef.current = '';
@@ -584,6 +596,47 @@ export default function ApplicantTutorChat() {
     finally { setLoading(false); }
   };
 
+  const reviewFact = async (fact: FactRow, approve: boolean) => {
+    if (loading || !caseId) return;
+    const owner = cases.find(item=>item.id===caseId)?.owner_id;
+    if (!currentUserId || owner !== currentUserId) {
+      setError('Solo el titular del expediente puede verificar sus datos.');
+      return;
+    }
+    setLoading(true);setError('');
+    try {
+      const user=await loggedInUser();
+      if (user.id !== currentUserId) throw new Error('Sesión no válida.');
+      const {data,error:reviewError}=await supabase.from('applicant_case_facts')
+        .update({
+          verification_status:approve ? 'verified' : 'rejected',
+          verified_by:approve ? user.id : null,
+          verified_at:approve ? new Date().toISOString() : null,
+        })
+        .eq('id',fact.id).eq('case_id',caseId)
+        .eq('verification_status','pending_review').select('id');
+      if (reviewError || !data?.length) {
+        throw new Error('No se pudo revisar el dato. Comprueba los permisos de Supabase.');
+      }
+      const {data:rows,error:loadError}=await supabase.from('applicant_case_facts')
+        .select('id,fact_key,fact_value,document_id,verification_status')
+        .eq('case_id',caseId).order('created_at',{ascending:false}).limit(60);
+      if(loadError) throw loadError;
+      if(activeCaseRef.current===caseId) {
+        setFacts((rows||[]) as FactRow[]);
+        setNotice(approve ? 'Dato confirmado; el Tutor podrá responder sin Gemini.' : 'Dato rechazado; no se utilizará como hecho verificado.');
+      }
+    } catch(e) {
+      setError(e instanceof Error ? e.message : 'No se pudo verificar el dato.');
+    } finally {setLoading(false);}
+  };
+
+  const FACT_LABELS: Record<string,string> = {
+    applicant_name:'Nombre',date_of_birth:'Fecha de nacimiento',
+    nationality:'Nacionalidad',destination:'País de destino',
+    visa_type:'Tipo de visa',passport_number:'Número de pasaporte',
+  };
+
   const toggleDoc = (id: string) => {
     setSelectedDocs(previous => {
       if (previous.includes(id)) return previous.filter(item => item !== id);
@@ -657,6 +710,28 @@ export default function ApplicantTutorChat() {
               </label>) : <p>No hay documentos todavía.</p>}
             </div>
           </details>
+          {facts.length > 0 && (
+            <details className="cm-tutor-documents cm-tutor-facts">
+              <summary>Datos del expediente ({facts.filter(f=>f.verification_status==='pending_review').length} por verificar)</summary>
+              <div className="cm-tutor-fact-list">
+                {facts.map(fact=>(
+                  <div className="cm-tutor-fact-row" key={fact.id}>
+                    <div>
+                      <strong>{FACT_LABELS[fact.fact_key] || fact.fact_key}:</strong> {fact.fact_value}
+                      <small> · {fact.verification_status==='verified'?'Verificado':fact.verification_status==='rejected'?'Rechazado':'Pendiente de verificación'}</small>
+                    </div>
+                    {fact.verification_status==='pending_review' &&
+                      cases.find(c=>c.id===caseId)?.owner_id===currentUserId && (
+                      <div className="cm-tutor-fact-actions">
+                        <button type="button" disabled={loading} onClick={()=>void reviewFact(fact,true)}>Confirmar</button>
+                        <button type="button" disabled={loading} onClick={()=>void reviewFact(fact,false)}>Rechazar</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
           <span className="cm-tutor-format">PDF o imagen · 2 MB máximo por archivo</span>
         </div>
 
