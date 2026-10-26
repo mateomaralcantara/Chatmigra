@@ -130,7 +130,10 @@ export function assembleConsularEvidence(
     }
     const eventDate=afterLabel(content,[
       label('(?:Event dates|Fecha del evento|Fechas del congreso)'),
-    ]);
+    ]) || (/\b(?:invitaci[oó]n|congreso|periodismo|encuentro)\b/i.test(content)
+      ? content.match(/(?:el\s+d[ií]a|los\s+d[ií]as|d[ií]as?)\s+(\d{1,2})(?:\s*(?:y|,|-)\s+\d{1,2})?\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+(?:de\s+)?((?:19|20)\d{2})/i)
+        ?.slice(1).join(' ') || null
+      : null);
     if(eventDate && !values.eventDate) values.eventDate={value:eventDate,source:doc.filename};
     if(/\b(?:alianza internacional de periodismo|AIPMA)\b/i.test(content)){
       if(!values.organizer)values.organizer={value:'Alianza Internacional de Periodismo (AIPMA)',source:doc.filename};
@@ -139,8 +142,11 @@ export function assembleConsularEvidence(
   if(excluded.length) alerts.push('Hay documentos sin coincidencia suficiente con el nombre del solicitante. Revisa su asignación antes de utilizarlos.');
   if(values.arrivalDate && values.eventDate){
     const arrival=normalizedDate(values.arrivalDate.value),event=normalizedDate(values.eventDate.value);
+    const departure=values.departureDate ? normalizedDate(values.departureDate.value) : '';
     if(/^\d{4}-/.test(arrival)&&/^\d{4}-/.test(event) && event<arrival){
       alerts.push('El evento del documento parece anterior a la llegada prevista; verificar el itinerario.');
+    } else if(/^\d{4}-/.test(departure)&&/^\d{4}-/.test(event) && event>departure) {
+      alerts.push('La invitación sitúa el evento después de la fecha de salida indicada en el DS-160. No entrenes una fecha inventada: verifica y actualiza los datos reales.');
     }
   }
   return {values,alerts:[...new Set(alerts)],included,excluded};
@@ -193,8 +199,20 @@ export function evaluateConsularAnswer(
   let match=false;
   if(item.method==='date') match=normalizedDate(spoken)===normalizedDate(item.expected);
   else if(item.method==='yesno') match=(yes(spoken)&&yes(item.expected))||(no(spoken)&&no(item.expected));
-  else if(item.method==='exact') match=answerNorm===expected ||
-    (answerNorm.length>=3 && expected.includes(answerNorm) && expected.length-answerNorm.length<12);
+  else if(item.method==='exact') {
+    match=answerNorm===expected ||
+      (answerNorm.length>=3 && expected.includes(answerNorm) && expected.length-answerNorm.length<12);
+    if(item.id==='identity'){
+      const tokens=(value:string)=>norm(value).split(' ').filter(Boolean).sort().join(' ');
+      match=match || tokens(spoken)===tokens(item.expected);
+    }
+    if(item.id==='visa' && /foreign media representative/.test(expected)){
+      match=match || /^(?:i|visa i|visa tipo i|representante de medios(?: extranjeros)?|visa de periodista)$/i.test(answerNorm);
+    }
+    if(item.id==='funding' && expected==='self') {
+      match=match || /^(?:yo|yo misma|yo mismo|por mi cuenta|con mis propios fondos)$/.test(answerNorm);
+    }
+  }
   else {
     const words=expected.split(' ').filter(x=>x.length>3);
     match=words.length>0 && words.filter(w=>answerNorm.includes(w)).length/words.length>=.65;
