@@ -297,7 +297,7 @@ test('case voice waits for complete free questions and accepts brief interview r
   assert.match(tutor, /voiceSessionRef\.current = phrase/);
   assert.match(tutor, /engine\.stop\(\)/);
   assert.match(tutor, /void askQuestion\(complete, true\)/);
-  assert.match(tutor, /No detecté una pregunta completa/);
+  assert.match(tutor, /No pude escuchar tu respuesta/);
   assert.doesNotMatch(tutor, /void askQuestion\(text, true\)/);
 });
 
@@ -422,7 +422,7 @@ test('RAG searches only RLS-authorized chunks and keeps raw-PDF fallback', () =>
   assert.match(api,/retrievalMode = 'indexed'/);
   assert.match(api,/if \(!retrievedContext\)/);
   assert.match(api,/caseParts\.push/);
-  assert.match(tutor,/Preparar búsqueda rápida/);
+  assert.match(tutor,/Preparar y comenzar simulacro/);
   assert.match(tutor,/\/api\/applicant-index/);
   assert.match(tutor,/indexedIds/);
 });
@@ -648,7 +648,7 @@ test('consular simulator is private, agent-led, handles corrections and never re
   assert.match(tutor,/grade\.repeat/);
   assert.match(tutor,/simulatorRef\.current=nextRun/);
   assert.match(tutor,/readAnswerAloud\(feedback\+' '\+nextPrompt,activeId\)/);
-  assert.match(tutor,/Simulacro consular \(19 módulos\)/);
+  assert.match(tutor,/Iniciar simulacro \(19 módulos\)/);
 });
 
 test('Tutor opens consular interview automatically and resumes without legacy priority prompt',()=>{
@@ -692,11 +692,30 @@ test('Tutor opens consular interview automatically and resumes without legacy pr
   assert.match(autoStart,/resumeConsularInterview\(history,payload\.questions\)/);
   assert.match(autoStart,/if\(progress\.pending\)/);
   assert.match(autoStart,/if\(!readyJobs\?\.length\)/);
-  assert.match(autoStart,/setMessages\(\[\.\.\.displayHistory,\{role:'model',content:prompt\}\]\)/);
-  assert.match(autoStart,/isInterviewQuestion\(last\.content\)/);
+  assert.match(autoStart,/setMessages\(\[\.\.\.activeHistory,\{role:'model',content:prompt\}\]\)/);
+  assert.match(autoStart,/firstConsular<0 \? history : history\.slice\(0,firstConsular\)/);
   assert.match(ui,/if\(startingSimulatorCasesRef\.current\.has\(caseId\)\)/);
   assert.doesNotMatch(autoStart,/interviewProgress/);
   assert.doesNotMatch(autoStart,/state\.nextQuestion/);
   assert.match(ui,/Pausar simulacro/);
   assert.match(ui,/Iniciar simulacro/);
+});
+
+
+test('document-backed interview starts only when prepared; voice cannot silently listen first',()=>{
+  const ui=read('src/components/ApplicantTutorChat.tsx');
+  assert.match(ui,/previousMessages\.length>0/);
+  assert.match(ui,/Historial anterior/);
+  assert.match(ui,/setPreviousMessages\(firstConsular<0 \? history : history\.slice\(0,firstConsular\)\)/);
+  assert.match(ui,/setMessages\(activeHistory\)/);
+  assert.match(ui,/response\.status===409/);
+  assert.match(ui,/la preparación puede consumir tu cuota de Gemini/);
+  assert.match(ui,/if\(!caseId \|\| !simulatorRef\.current\)/);
+  assert.match(ui,/if\(active\) readAnswerAloud\(active\.questions\[active\.index\]\.question,caseId\)/);
+  assert.match(ui,/disabled=\{!caseId \|\| !simulator \|\| loading\}/);
+  assert.match(ui,/No escuché tu respuesta/);
+  assert.doesNotMatch(ui,/No detecté una pregunta\./);
+  assert.match(ui,/successes > 0 && !simulatorRef\.current\) void refreshCase\(caseId\)/);
+  assert.match(ui,/⚡ Preparar y comenzar simulacro/);
+  assert.match(ui,/fetch\('\/api\/applicant-simulator'/);
 });
