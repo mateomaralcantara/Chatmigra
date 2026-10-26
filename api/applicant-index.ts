@@ -73,10 +73,36 @@ export default async function handler(req: Request, res: Response) {
   }
   const admin = getAdminSupabase();
   if (!admin) return res.status(503).json({error:'El servicio privado de indexación no está configurado.'});
+  const suggestFacts = async (extractedText: string): Promise<void> => {
+    const proposed = extractCaseFactCandidates(extractedText);
+    if (!proposed.length) return;
+    const {error: suggestionsError} = await admin.from('applicant_case_facts')
+      .upsert(proposed.map(item => ({
+        case_id:doc.case_id, document_id:doc.id, fact_key:item.fact_key,
+        fact_value:item.fact_value, verification_status:'pending_review',
+      })), {
+        onConflict:'case_id,document_id,fact_key,fact_value',
+        ignoreDuplicates:true,
+      });
+    if (suggestionsError) {
+      console.warn('[tutor-index] Candidate memory unavailable:', suggestionsError.code);
+    }
+  };
+
   const {data:existing,error:existingError} = await admin.from('applicant_case_document_chunks')
     .select('id').eq('document_id',documentId).limit(1);
   if (existingError) return res.status(503).json({error:'Instala el SQL RAG de ChatMi en Supabase.'});
-  if (existing?.length) return res.status(200).json({indexed:true,alreadyIndexed:true});
+  if (existing?.length) {
+    // Old RAG indexes are reusable: populate new candidate facts from stored
+    // private chunks, without another paid Gemini transcription.
+    const {data:storedChunks,error:chunkError}=await admin.from('applicant_case_document_chunks')
+      .select('content').eq('case_id',doc.case_id).eq('document_id',doc.id)
+      .order('chunk_index',{ascending:true}).limit(MAX_CHUNKS);
+    if(!chunkError && storedChunks?.length) {
+      await suggestFacts(storedChunks.map(chunk=>String(chunk.content||'')).join('\n'));
+    }
+    return res.status(200).json({indexed:true,alreadyIndexed:true});
+  }
   const {data:prior} = await admin.from('applicant_case_index_jobs')
     .select('status,started_at').eq('document_id',documentId).maybeSingle();
   if (prior) {
@@ -151,21 +177,8 @@ export default async function handler(req: Request, res: Response) {
         case_id:doc.case_id,document_id:doc.id,chunk_index:i,content
       })));
     if (insertError) throw new Error('INDEX_SAVE_FAILED');
-    // Suggestions are NEVER trusted automatically. Only an owner may change
-    // pending_review to verified via the RLS-protected review action.
-    const proposed = extractCaseFactCandidates(output);
-    if (proposed.length) {
-      const { error: suggestionsError } = await admin.from('applicant_case_facts')
-        .upsert(proposed.map(item => ({
-          case_id:doc.case_id, document_id:doc.id, fact_key:item.fact_key,
-          fact_value:item.fact_value, verification_status:'pending_review',
-        })), {
-          onConflict:'case_id,document_id,fact_key,fact_value',
-          ignoreDuplicates:true,
-        });
-      // Backward compatible until the optional facts SQL is installed.
-      if (suggestionsError) console.warn('[tutor-index] Candidate memory unavailable:', suggestionsError.code);
-    }
+    // Candidate facts remain pending; only the case owner can approve them.
+    await suggestFacts(output);
     const {error:jobError} = await admin.from('applicant_case_index_jobs')
       .update({status:'ready',completed_at:new Date().toISOString()})
       .eq('document_id',doc.id);
