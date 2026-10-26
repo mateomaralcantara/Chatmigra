@@ -1629,3 +1629,29 @@ input {
   .cm-tutor-chat-bottom {padding:8px 10px 14px;}
   .cm-tutor-format {margin-left:0;}
 }
+
+/* Fact review lives inside the existing Documents bar, not in a new screen.
+   Keep it in a popover above the composer so long dossiers don't block Chat/Voz. */
+.cm-tutor-facts { position: relative; }
+.cm-tutor-facts .cm-tutor-fact-list {
+  position: absolute;
+  z-index: 35;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: min(520px, 82vw);
+  max-height: min(55vh, 380px);
+  overflow: auto;
+  padding: 12px;
+  background: var(--cm-panel, #fff);
+  color: var(--cm-text, #1c2637);
+  border: 1px solid var(--cm-border, #dce5f3);
+  border-radius: 14px;
+  box-shadow: 0 6px 32px rgba(15, 33, 60, .18);
+}
+.cm-tutor-fact-row {display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 2px;border-bottom:1px solid var(--cm-border,#dce5f3);font-size:13px;overflow-wrap:anywhere;}
+.cm-tutor-fact-row:last-child {border-bottom:0;}
+.cm-tutor-fact-row small {color:var(--cm-secondary,#60718c);}
+.cm-tutor-fact-actions {display:flex;gap:6px;flex-wrap:wrap;}
+.cm-tutor-fact-actions button {border:1px solid var(--cm-border,#c9d6ea);border-radius:8px;background:var(--cm-accent-soft,#e8f0ff);color:var(--cm-text,#24395b);padding:6px 10px;cursor:pointer;font-weight:600;}
+.cm-tutor-fact-actions button:disabled {opacity:.55;cursor:not-allowed;}
+@media(max-width:700px){.cm-tutor-facts .cm-tutor-fact-list{left:auto;right:0;width:min(480px,85vw);}.cm-tutor-fact-row{display:block}.cm-tutor-fact-actions{margin-top:8px}}
