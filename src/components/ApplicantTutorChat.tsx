@@ -532,8 +532,8 @@ export default function ApplicantTutorChat() {
 
   const toggleVoice = () => {
     if (voiceOnRef.current) { stopVoice(); return; }
-    if (!caseId || !selectedDocs.length) {
-      setError('Sube y selecciona un documento antes de iniciar la conversación por voz.');
+    if (!caseId || (!selectedDocs.length && !guidedRef.current)) {
+      setError('Selecciona un documento para consultar fuera de la entrevista.');
       return;
     }
     const Recognition = recognitionConstructor();
@@ -553,8 +553,8 @@ export default function ApplicantTutorChat() {
       voiceDelayRef.current = null;
       if (!voiceOnRef.current || busyRef.current) return;
       const complete = composedText();
-      if (complete.split(/\s+/).filter(Boolean).length < 3) {
-        setError('Escuché una pregunta incompleta. Repite la frase completa.');
+      if (complete.split(/\s+/).filter(Boolean).length < (guidedRef.current ? 1 : 3)) {
+        setError('No pude escuchar tu respuesta completa. Repítela.');
         return;
       }
       voiceSessionRef.current = '';
@@ -582,10 +582,10 @@ export default function ApplicantTutorChat() {
       setTranscript(full);
       const words = full.split(/\s+/).filter(Boolean).length;
       const finalPart = entries.some(entry => entry.isFinal !== false);
-      if (finalPart && words >= 3) {
+      if (finalPart && words >= (guidedRef.current ? 1 : 3)) {
         setError('');
         // Wait for further words rather than sending the first detected fragment.
-        scheduleQuestion(1700);
+        scheduleQuestion(guidedRef.current ? 850 : 1400);
       } else if (voiceDelayRef.current) {
         clearTimeout(voiceDelayRef.current);
         voiceDelayRef.current = null;
@@ -608,7 +608,7 @@ export default function ApplicantTutorChat() {
       if (!voiceOnRef.current || busyRef.current) return;
       if (voiceDelayRef.current) return;
       const phrase = composedText();
-      if (phrase.split(/\s+/).filter(Boolean).length >= 3) {
+      if (phrase.split(/\s+/).filter(Boolean).length >= (guidedRef.current ? 1 : 3)) {
         scheduleQuestion(450);
         return;
       }
@@ -639,10 +639,48 @@ export default function ApplicantTutorChat() {
     voiceSessionRef.current = '';
     voiceRestartRef.current = 0;
     setVoiceOn(true); setError(''); setTranscript('');
-    try { engine.start(); setListening(true); } catch {
+    try {
+      const profile = caseProfilesRef.current.find(item => item.id === caseId) || {};
+      const interview = interviewProgress(messagesRef.current, profile);
+      if (guidedRef.current && interview.pending && interview.nextQuestion) {
+        // Browser speech may only start on a user gesture. This click is that
+        // gesture: ask aloud first; microphone resumes when speech finishes.
+        readAnswerAloud(interview.nextQuestion, caseId);
+      } else {
+        engine.start(); setListening(true);
+      }
+    } catch {
       stopVoice();
-      setError('No se pudo iniciar el micrófono.');
+      setError('No se pudo iniciar la conversación por voz.');
     }
+  };
+
+  const toggleGuidedInterview = () => {
+    if (busyRef.current || loading || !caseId) return;
+    stopVoice();
+    const next = !guidedRef.current;
+    guidedRef.current = next;
+    setGuided(next);
+    if (!next) return;
+    const profile = caseProfilesRef.current.find(item => item.id === caseId) || {};
+    const interview = interviewProgress(messagesRef.current, profile);
+    if (!interview.nextQuestion || interview.pending) return;
+    const prompt = interview.nextQuestion;
+    const snapshot = [...messagesRef.current];
+    setMessages([...snapshot, {role:'model',content:prompt}]);
+    void (async () => {
+      try {
+        const user = await loggedInUser();
+        const {error:saveError}=await supabase.from('applicant_case_messages')
+          .insert({case_id:caseId,created_by:user.id,role:'model',content:prompt});
+        if (saveError) throw saveError;
+      } catch {
+        if (activeCaseRef.current === caseId) {
+          setMessages(snapshot);
+          setError('No se pudo reanudar la entrevista.');
+        }
+      }
+    })();
   };
 
   const switchMode = (next: Mode) => {
@@ -735,8 +773,8 @@ export default function ApplicantTutorChat() {
       <div className="cm-tutor-chat-scroll" aria-live="polite">
         {!messages.length && (
           <div className="cm-tutor-chat-welcome">
-            <h1>{mode === 'chat' ? '¿Qué deseas saber de tus documentos?' : 'Conversa con tu Tutor Migratorio'}</h1>
-            <p>{caseId ? 'Sube documentos y consulta únicamente la información de este expediente privado.' : 'Crea un expediente para comenzar.'}</p>
+            <h1>{caseId ? 'Tu Tutor comienza la entrevista' : 'Tutor Migratorio Personal'}</h1>
+            <p>{caseId ? 'El agente te hará una pregunta a la vez. Puedes responder por chat o por voz.' : 'Crea un expediente para comenzar.'}</p>
           </div>
         )}
         <div className="cm-tutor-chat-messages">
@@ -749,12 +787,19 @@ export default function ApplicantTutorChat() {
                 : <p>{item.content}</p>}
             </div>
           )}
-          {loading && <p className="cm-tutor-chat-thinking" role="status">Consultando expediente y generando respuesta…</p>}
+          {loading && <p className="cm-tutor-chat-thinking" role="status">{guided ? 'Guardando tu respuesta…' : 'Consultando expediente…'}</p>}
           <div ref={endRef} />
         </div>
       </div>
 
       <div className="cm-tutor-chat-bottom">
+        <div className="cm-tutor-interview-bar">
+          <span>{guided ? 'Entrevista dirigida por el agente · respuestas rápidas' : 'Consulta libre del expediente'}</span>
+          <button type="button" disabled={!caseId || loading}
+            onClick={toggleGuidedInterview}>
+            {guided ? 'Pausar entrevista' : 'Reanudar entrevista'}
+          </button>
+        </div>
         {error && <p role="alert" className="cm-inline-error">{error}</p>}
         {notice && <p role="status" className="cm-tutor-chat-notice">{notice}</p>}
         {replyIncomplete && !loading && (
@@ -810,24 +855,24 @@ export default function ApplicantTutorChat() {
             <textarea aria-label="Preguntar sobre los documentos" rows={1} value={question} disabled={!caseId || loading}
               onChange={event => setQuestion(event.target.value)}
               onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if (question.trim()) void askQuestion(question, false); } }}
-              placeholder="Pregunta sobre los documentos del expediente…" />
+              placeholder={guided ? 'Responde la pregunta del Tutor…' : 'Pregunta sobre los documentos del expediente…'} />
             <div className="cm-composer-actions">
-              <span className="cm-model-chip">Gemini</span>
+              <span className="cm-model-chip">{guided ? 'Respuesta rápida' : 'Gemini / RAG'}</span>
               <button type="button" className="cm-composer-mic" aria-label="Ir a Voz" title="Conversación por voz" onClick={() => switchMode('voice')}>♫</button>
-              <button type="submit" className="cm-composer-send" aria-label="Enviar pregunta" disabled={loading || !question.trim() || !selectedDocs.length}>↑</button>
+              <button type="submit" className="cm-composer-send" aria-label="Enviar respuesta" disabled={loading || !question.trim() || (!guided && !selectedDocs.length)}>↑</button>
             </div>
           </form>
         ) : (
           <div className="cm-tutor-voice-panel">
             <button type="button" className={'cm-tutor-voice-button ' + (listening ? 'is-listening' : '')} aria-pressed={voiceOn}
-              onClick={toggleVoice} disabled={!caseId || !selectedDocs.length || loading}>
+              onClick={toggleVoice} disabled={!caseId || (!guided && !selectedDocs.length) || loading}>
               {voiceOn ? '■ Detener voz' : '🎙 Iniciar voz'}
             </button>
             <div aria-live="polite">
-              {speaking ? 'El Tutor está respondiendo…' : listening ? 'Escuchando tu pregunta…' : voiceOn ? 'Procesando…' : 'Pulsa el micrófono para conversar sobre tus documentos.'}
+              {speaking ? 'El Tutor está haciendo su pregunta…' : listening ? 'Escuchando tu respuesta…' : voiceOn ? 'Preparando la siguiente pregunta…' : 'Pulsa Iniciar voz: el Tutor hablará primero.'}
             </div>
             {transcript && <p className="cm-tutor-voice-transcript">Escuché: {transcript}</p>}
-            <small>Se utiliza el reconocimiento y la voz del navegador; las respuestas se basan en los documentos seleccionados.</small>
+            <small>El Tutor dirige la entrevista. La voz depende del navegador y no requiere Gemini para las preguntas guiadas.</small>
           </div>
         )}
       </div>
