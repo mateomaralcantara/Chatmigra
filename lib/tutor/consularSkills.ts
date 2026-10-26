@@ -159,12 +159,14 @@ export function createConsularQuestions(
   const evidence=assembleConsularEvidence(applicantName,documents);
   const questions=CONSULAR_SKILLS.map(skill=>{
     const datum=skill.field ? evidence.values[skill.field] : undefined;
-    let status: PreparedQuestion['status'] = datum ? 'document' : 'practice';
+    const support = datum || (skill.id==='purpose' || skill.id==='journalism'
+      ? evidence.values.visaType : undefined);
+    let status: PreparedQuestion['status'] = support ? 'document' : 'practice';
     if(skill.id==='consistency' && evidence.alerts.length) status='discrepancy';
     return {
       id:skill.id,skill:skill.id,title:skill.title,method:skill.method,
-      question:skill.question,expected:datum?.value || null,
-      source:datum?.source || null,status,
+      question:skill.question,expected:support?.value || null,
+      source:support?.source || null,status,
       explanation:skill.correction,
     };
   });
@@ -189,6 +191,15 @@ export function evaluateConsularAnswer(
   const spoken=answer.trim();
   if(!spoken || norm(spoken).length<2)
     return {outcome:'clarify',feedback:'No escuché una respuesta completa. Te pregunto de nuevo.',repeat:true};
+  if(item.method==='explanation' &&
+      /foreign media representative/.test(norm(item.expected||''))) {
+    if(/\b(turism|vacacion|paseo|compras)\b/i.test(norm(spoken)) ||
+      !/\b(prensa|periodismo|periodista|cobertura|reporter|corresponsal|medios|noticias|entrevista|congreso)\b/i.test(norm(spoken))) {
+      return {outcome:attempts>=2?'review':'retry',
+        feedback:'El documento indica una categoría de representante de medios. Tu respuesta no explica claramente esa actividad. Si el propósito real es otro, hay que revisar el DS-160, no inventar una explicación. '+(attempts<2?'¿Puedes aclararlo?':'Revisaremos este punto.'),
+        repeat:attempts<2};
+    }
+  }
   if(!item.expected || item.status==='discrepancy' ||
      ['practice','explanation','reconcile'].includes(item.method)){
     if(norm(spoken).split(' ').length<4 && item.method!=='yesno')
@@ -215,7 +226,13 @@ export function evaluateConsularAnswer(
   }
   else {
     const words=expected.split(' ').filter(x=>x.length>3);
-    match=words.length>0 && words.filter(w=>answerNorm.includes(w)).length/words.length>=.65;
+    match=(answerNorm.length>=4 && expected.includes(answerNorm)) ||
+      (words.length>0 && words.filter(w=>answerNorm.includes(w)).length/words.length>=.65);
+    if(item.id==='invitation' && match && answerNorm.split(' ').length<4) {
+      return {outcome:attempts>=2?'review':'clarify',
+        feedback:'Identificaste al organizador. Explica también qué actividad realizarás realmente durante la visita.',
+        repeat:attempts<2};
+    }
   }
   if(match)return {outcome:'correct',feedback:'Correcto. Continuemos.',repeat:false};
   if(attempts>=2)return {
