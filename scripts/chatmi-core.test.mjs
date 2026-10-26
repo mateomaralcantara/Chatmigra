@@ -292,8 +292,8 @@ test('case voice waits for complete free questions and accepts brief interview r
   assert.match(tutor, /engine\.continuous = true/);
   assert.match(tutor, /engine\.interimResults = true/);
   assert.match(tutor, /const submitRecognizedQuestion/);
-  assert.match(tutor, /guidedRef\.current \? 1 : 3/);
-  assert.match(tutor, /scheduleQuestion\(guidedRef\.current \? 850 : 1400\)/);
+  assert.match(tutor, /guidedRef\.current \|\| simulatorRef\.current/);
+  assert.match(tutor, /scheduleQuestion\(\(guidedRef\.current \|\| simulatorRef\.current\) \? 850 : 1400\)/);
   assert.match(tutor, /voiceSessionRef\.current = phrase/);
   assert.match(tutor, /engine\.stop\(\)/);
   assert.match(tutor, /void askQuestion\(complete, true\)/);
@@ -580,4 +580,70 @@ test('guided Tutor starts the interview and automatically asks every next questi
   assert.match(tutor, /Reanudar entrevista/);
   assert.match(tutor, /Entrevista dirigida por el agente/);
   assert.match(tutor, /Guardar tu respuesta|Guardando tu respuesta/);
+});
+
+test('19 consular modules generate source-grounded questions without mixing applicants', () => {
+  const src=read('lib/tutor/consularSkills.ts');
+  const output=ts.transpileModule(src,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+  }).outputText;
+  const sandbox={module:{exports:{}}};
+  sandbox.exports=sandbox.module.exports;
+  vm.runInNewContext(output,sandbox);
+  const {CONSULAR_SKILLS,createConsularQuestions,evaluateConsularAnswer}=sandbox.module.exports;
+  assert.ok(CONSULAR_SKILLS.length>=15);
+  assert.equal(new Set(CONSULAR_SKILLS.map(s=>s.id)).size,CONSULAR_SKILLS.length);
+  const docs=[
+    {id:'a',filename:'solicitud.pdf',content:[
+      'Name Provided: EJEMPLO PEREZ, ANA MARIA',
+      'Date of Birth: 21 MARCH 1983',
+      'Passport/Travel Document Number: RD9990000',
+      'Purpose of Trip to the U.S. (1): FOREIGN MEDIA REPRESENTATIVE (I)',
+      'Date of Arrival in U.S.: 23 SEPTEMBER 2026',
+      'Date of Departure from U.S.: 30 SEPTEMBER 2026',
+      'Person/Entity Paying for Your Trip: SELF',
+    ].join('\n')},
+    {id:'b',filename:'invitacion.docx',content:
+      'Invitación a ANA MARIA EJEMPLO PEREZ de AIPMA al congreso, el día 10 y 11 de diciembre 2026.'},
+    {id:'c',filename:'otra_persona.png',content:
+      'Invitación de MARIA PATRICIA TORRES: los días 26 y 27 de octubre 2026.'},
+  ];
+  const plan=createConsularQuestions('ANA MARIA EJEMPLO PEREZ',docs);
+  assert.equal(plan.questions.length,CONSULAR_SKILLS.length);
+  assert.equal(plan.included.length,2);
+  assert.equal(plan.excluded.length,1);
+  assert.ok(plan.excluded.includes('otra_persona.png'));
+  assert.ok(plan.alerts.some(message=>/después de la fecha de salida/.test(message)));
+  const identity=plan.questions.find(q=>q.id==='identity');
+  const birth=plan.questions.find(q=>q.id==='birth');
+  const visa=plan.questions.find(q=>q.id==='visa');
+  const funding=plan.questions.find(q=>q.id==='funding');
+  const passport=plan.questions.find(q=>q.id==='passport');
+  assert.equal(evaluateConsularAnswer(identity,'ANA MARIA EJEMPLO PEREZ',0).outcome,'correct');
+  assert.equal(evaluateConsularAnswer(birth,'21 de marzo de 1983',0).outcome,'correct');
+  assert.equal(evaluateConsularAnswer(visa,'Visa I',0).outcome,'correct');
+  assert.equal(evaluateConsularAnswer(funding,'Yo misma',0).outcome,'correct');
+  const wrong=evaluateConsularAnswer(passport,'RD0000000',0);
+  assert.equal(wrong.outcome,'retry');
+  assert.equal(wrong.repeat,true);
+  assert.equal(evaluateConsularAnswer(passport,'RD0000000',2).outcome,'review');
+  assert.equal(evaluateConsularAnswer(plan.questions.find(q=>q.id==='purpose'),'Por una misión periodística',0).outcome,'review');
+});
+
+test('consular simulator is private, agent-led, handles corrections and never reveals other-case chunks',()=>{
+  const api=read('api/applicant-simulator.ts');
+  const tutor=read('src/components/ApplicantTutorChat.tsx');
+  assert.match(api,/requireAuthenticatedUser\(req\)/);
+  assert.match(api,/\.from\('applicant_cases'\)/);
+  assert.match(api,/\.from\('applicant_case_documents'\)/);
+  assert.match(api,/\.from\('applicant_case_document_chunks'\)/);
+  assert.match(api,/\.eq\('case_id',caseId\)/);
+  assert.match(api,/if\(!generated\.included\.length\)/);
+  assert.doesNotMatch(api,/getAdminSupabase|service_role/);
+  assert.match(tutor,/fetch\('\/api\/applicant-simulator'/);
+  assert.match(tutor,/const grade=evaluateConsularAnswer/);
+  assert.match(tutor,/grade\.repeat/);
+  assert.match(tutor,/simulatorRef\.current=nextRun/);
+  assert.match(tutor,/readAnswerAloud\(feedback\+' '\+nextPrompt,activeId\)/);
+  assert.match(tutor,/Simulacro consular \(19 módulos\)/);
 });
