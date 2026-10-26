@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { supabase } from '../services/supabaseClient';
 import { naturalSpanishSpeech } from '../../lib/tutor/interview';
-import { evaluateConsularAnswer, resumeConsularInterview, CONSULAR_FINISHED, type PreparedQuestion } from '../../lib/tutor/consularSkills';
+import { CONSULAR_SKILLS, evaluateConsularAnswer, resumeConsularInterview, CONSULAR_FINISHED, type PreparedQuestion } from '../../lib/tutor/consularSkills';
 
 type CaseRow = { id: string; applicant_name: string; owner_id: string; nationality: string; destination: string; visa_type: string };
 type SimulatorRun = { questions: PreparedQuestion[]; index:number; attempts:number; alerts:string[]; excluded:string[]; unindexed:string[] };
@@ -965,7 +965,7 @@ export default function ApplicantTutorChat() {
           <button type="button" className="cm-tutor-upload" onClick={() => fileRef.current?.click()} disabled={!caseId || loading}>＋ Subir documentos</button>
           <button type="button" className="cm-tutor-upload" onClick={() => void startSimulator()}
             disabled={!caseId || !docs.length || loading || Boolean(simulator) || !indexedIds.length}>
-            🎓 Iniciar simulacro (19 módulos)
+            🎓 Iniciar simulacro ({CONSULAR_SKILLS.length} módulos)
           </button>
           {simulator && <button type="button" className="cm-tutor-upload"
             onClick={stopSimulator}>Terminar simulacro</button>}
