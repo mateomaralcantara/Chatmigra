@@ -175,6 +175,7 @@ export default function ApplicantTutorChat() {
     // document upload is needed merely to begin the intake interview.
     const profile = caseProfilesRef.current.find(item => item.id === id) || {};
     const state = interviewProgress(history, profile);
+    if (state.completed) { guidedRef.current = false; setGuided(false); }
     if (guidedRef.current && !state.pending && !state.completed && state.nextQuestion) {
       const prompt = state.nextQuestion;
       setMessages([...history, {role:'model',content:prompt}]);
@@ -860,7 +861,7 @@ export default function ApplicantTutorChat() {
         {mode === 'chat' ? (
           <form className="cm-composer cm-tutor-composer" onSubmit={send}>
             <button type="button" className="cm-composer-plus" aria-label="Subir documentos" title="Subir documentos" onClick={() => fileRef.current?.click()} disabled={!caseId || loading}>+</button>
-            <textarea aria-label="Preguntar sobre los documentos" rows={1} value={question} disabled={!caseId || loading}
+            <textarea aria-label={guided ? 'Responder al Tutor' : 'Preguntar sobre los documentos'} rows={1} value={question} disabled={!caseId || loading}
               onChange={event => setQuestion(event.target.value)}
               onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if (question.trim()) void askQuestion(question, false); } }}
               placeholder={guided ? 'Responde la pregunta del Tutor…' : 'Pregunta sobre los documentos del expediente…'} />
