@@ -258,7 +258,8 @@ export default function ApplicantTutorChat() {
 
 
   const prepareFastSearch = async () => {
-    const pending = docs.filter(d => selectedDocs.includes(d.id) && !indexedIds.includes(d.id));
+    const pending = docs.filter(d => selectedDocs.includes(d.id) &&
+      (!indexedIds.includes(d.id) || !facts.some(f=>f.document_id===d.id)));
     if (!pending.length || loading || busyRef.current) return;
     busyRef.current = true; setLoading(true); setError(''); setNotice('');
     let successes = 0;
@@ -281,10 +282,17 @@ export default function ApplicantTutorChat() {
           failures.push(doc.filename + ': ' + (err instanceof Error ? err.message : 'error'));
         }
       }
-      const {data:ready}=await supabase.from('applicant_case_index_jobs')
-        .select('document_id').eq('case_id',caseId).eq('status','ready');
+      const [readyResponse, factResponse] = await Promise.all([
+        supabase.from('applicant_case_index_jobs')
+          .select('document_id').eq('case_id',caseId).eq('status','ready'),
+        supabase.from('applicant_case_facts')
+          .select('id,fact_key,fact_value,document_id,verification_status')
+          .eq('case_id',caseId).order('created_at',{ascending:false}).limit(60),
+      ]);
+      const ready = readyResponse.data;
       if (activeCaseRef.current === caseId) {
         setIndexedIds((ready||[]).map(row=>String(row.document_id)));
+        if (!factResponse.error) setFacts((factResponse.data||[]) as FactRow[]);
         setNotice(successes + ' documento(s) preparados. Las próximas preguntas usarán fragmentos indexados cuando todos los seleccionados estén listos.');
         if (failures.length) setError(failures.join(' | ').slice(0,900));
       }
@@ -697,7 +705,7 @@ export default function ApplicantTutorChat() {
           <input ref={fileRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" className="cm-expediente-file-input" onChange={event => void uploadDocument(event)} disabled={!caseId || loading} aria-label="Subir documentos al expediente" />
           <button type="button" className="cm-tutor-upload" onClick={() => fileRef.current?.click()} disabled={!caseId || loading}>＋ Subir documentos</button>
           <button type="button" className="cm-tutor-upload" onClick={() => void prepareFastSearch()}
-            disabled={!caseId || loading || selectedDocs.every(id => indexedIds.includes(id)) || !selectedDocs.length}
+            disabled={!caseId || loading || selectedDocs.every(id => indexedIds.includes(id) && facts.some(f=>f.document_id===id)) || !selectedDocs.length}
             title="Prepara una vez los documentos seleccionados para responder más rápido">
             ⚡ Preparar búsqueda rápida
           </button>
