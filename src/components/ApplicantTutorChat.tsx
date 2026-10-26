@@ -6,7 +6,7 @@ import { interviewProgress, INTERVIEW_COMPLETE, naturalSpanishSpeech } from '../
 import { evaluateConsularAnswer, type PreparedQuestion } from '../../lib/tutor/consularSkills';
 
 type CaseRow = { id: string; applicant_name: string; owner_id: string; nationality: string; destination: string; visa_type: string };
-type SimulatorRun = { questions: PreparedQuestion[]; index:number; attempts:number; alerts:string[]; unindexed:string[] };
+type SimulatorRun = { questions: PreparedQuestion[]; index:number; attempts:number; alerts:string[]; excluded:string[]; unindexed:string[] };
 type FactRow = { id:string; fact_key:string; fact_value:string; document_id:string|null; verification_status:'pending_review'|'verified'|'rejected' };
 type DocRow = { id: string; filename: string; mime_type: string; storage_path: string; created_at: string };
 type MessageRow = { id?: string; role: 'user' | 'model'; content: string; created_at?: string };
@@ -358,7 +358,7 @@ export default function ApplicantTutorChat() {
       guidedRef.current=false;setGuided(false);
       const run:SimulatorRun={
         questions:payload.questions,index:0,attempts:0,
-        alerts:payload.alerts||[],unindexed:payload.unindexed||[],
+        alerts:payload.alerts||[],excluded:payload.excluded||[],unindexed:payload.unindexed||[],
       };
       simulatorRef.current=run;setSimulator(run);
       const prompt=run.questions[0].question;
@@ -928,6 +928,13 @@ export default function ApplicantTutorChat() {
             {guided ? 'Pausar entrevista' : 'Reanudar entrevista'}
           </button>
         </div>
+        {simulator && (simulator.alerts.length > 0 || simulator.excluded.length > 0) && (
+          <details className="cm-tutor-simulator-alerts">
+            <summary>Revisar inconsistencias documentales ({simulator.alerts.length})</summary>
+            {simulator.alerts.map((alert,i)=><p key={'a'+i}>{alert}</p>)}
+            {simulator.excluded.length>0 && <p>Documentos sin identificación suficiente para esta persona: {simulator.excluded.join(', ')}. No se utilizarán en las respuestas.</p>}
+          </details>
+        )}
         {error && <p role="alert" className="cm-inline-error">{error}</p>}
         {notice && <p role="status" className="cm-tutor-chat-notice">{notice}</p>}
         {replyIncomplete && !loading && (
