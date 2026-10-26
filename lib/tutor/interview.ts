@@ -46,7 +46,7 @@ export function interviewProgress(history: InterviewMessage[], profile: Intervie
     }
   }
   const refusalAnswer = answers.get('refusal') || '';
-  const refusalIsYes = /^(s[ií]|claro|afirmativo|yes)\b/i.test(refusalAnswer);
+  const refusalIsYes = /^(?:s[ií]|claro|afirmativo|yes)(?=$|[\s.,;!?])/i.test(refusalAnswer);
   const applicable = ORDER.filter(key => {
     if (key === 'nationality' && profile.nationality?.trim()) return false;
     if (key === 'destination' && profile.destination?.trim()) return false;
