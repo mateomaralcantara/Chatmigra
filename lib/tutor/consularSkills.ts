@@ -101,19 +101,19 @@ export function assembleConsularEvidence(
   const values: Record<string,{value:string;source:string}>={};
   const alerts:string[]=[];
   const entries:Record<string,RegExp[]>={
-    fullName:[label('(?:Name Provided|Full Name in Native Language|nombre completo)')],
+    fullName:[label('(?:Name Provided|Full Name in Native Language|nombre completo|nombre proporcionado|nombre de la solicitante)')],
     birthDate:[label('(?:Date of Birth|Fecha de nacimiento)')],
-    passportNumber:[label('(?:Passport\\/Travel Document Number|Passport Number|PASS|PASAPORTE)')],
-    visaType:[label('(?:Purpose of Trip to the U\\.S\\. \\(1\\)|Visa Type|Tipo de visa)')],
-    arrivalDate:[label('(?:Date of Arrival in U\\.S\\.|Fecha de llegada)')],
-    departureDate:[label('(?:Date of Departure from U\\.S\\.|Fecha de salida)')],
-    tripPayer:[label('(?:Person\\/Entity Paying for Your Trip|Quién paga)')],
-    occupation:[label('(?:Primary Occupation|Ocupación actual)')],
-    employer:[label('(?:Present Employer or School Name|Empleador)')],
+    passportNumber:[label('(?:Passport\\/Travel Document Number|Passport Number|número de pasaporte|numero de pasaporte|documento de viaje|PASS|PASAPORTE)')],
+    visaType:[label('(?:Purpose of Trip to the U\\.S\\. \\(1\\)|Visa Type|Tipo de visa|propósito del viaje a estados unidos|proposito del viaje a estados unidos)')],
+    arrivalDate:[label('(?:Date of Arrival in U\\.S\\.|Fecha de llegada|fecha de ingreso)')],
+    departureDate:[label('(?:Date of Departure from U\\.S\\.|Fecha de salida|fecha de regreso)')],
+    tripPayer:[label('(?:Person\\/Entity Paying for Your Trip|Quién paga|Quien paga|persona que paga el viaje|entidad que paga el viaje)')],
+    occupation:[label('(?:Primary Occupation|Ocupación actual|Ocupación principal|Ocupacion principal)')],
+    employer:[label('(?:Present Employer or School Name|Empleador|empleador actual|nombre del empleador)')],
     education:[label('(?:Name of Institution \\(1\\)|Institución educativa)')],
     usRelative:[label('(?:Relative Name \\(1\\)|Nombre del familiar)')],
     visaRefusal:[label('(?:Have you ever been refused a U\\.S\\. Visa[^\\n]*|Visa refusal|Denegación previa)')],
-    usContact:[label('(?:Contact Person Name in the U\\.S\\.|Contacto en EE\\. UU\\.)')],
+    usContact:[label('(?:Contact Person Name in the U\\.S\\.|Contacto en EE\\. UU\\.|Contacto en Estados Unidos|nombre del contacto en estados unidos)')],
   };
   for(const doc of documents){
     const content=doc.content.slice(0,180000);
