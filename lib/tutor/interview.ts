@@ -69,6 +69,9 @@ export function interviewProgress(history: InterviewMessage[], profile: Intervie
 // of individually spaced letters, but never rewrite actual applicant documents.
 export function naturalSpanishSpeech(answer: string): string {
   const plain = answer.replace(/https?:\/\/\S+/gi, 'enlace disponible en pantalla')
+    .replace(/\bAIPMA\b/gi, 'Alianza Internacional de Periodismo')
+    .replace(/\bDS[\s-]?160\b/gi, 'formulario de ese ciento sesenta')
+    .replace(/\bEE\s*\.?\s*UU\s*\.?/gi, 'Estados Unidos')
     .replace(/[*#_\x60\[\]<>]/g, ' ')
     .replace(/\s+/g, ' ').trim();
   return plain.replace(/(?:\b[A-Za-zÁÉÍÓÚÜÑ]\b[\s.,;-]+){2,}\b[A-Za-zÁÉÍÓÚÜÑ]\b/g,
