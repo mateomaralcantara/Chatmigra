@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEv
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { supabase } from '../services/supabaseClient';
-import { naturalSpanishSpeech, isInterviewQuestion } from '../../lib/tutor/interview';
+import { naturalSpanishSpeech } from '../../lib/tutor/interview';
 import { evaluateConsularAnswer, resumeConsularInterview, CONSULAR_FINISHED, type PreparedQuestion } from '../../lib/tutor/consularSkills';
 
 type CaseRow = { id: string; applicant_name: string; owner_id: string; nationality: string; destination: string; visa_type: string };
@@ -88,6 +88,7 @@ export default function ApplicantTutorChat() {
   const [currentUserId, setCurrentUserId] = useState('');
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [messages, setMessages] = useState<MessageRow[]>([]);
+  const [previousMessages, setPreviousMessages] = useState<MessageRow[]>([]);
   const [question, setQuestion] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -137,7 +138,7 @@ export default function ApplicantTutorChat() {
   }, []);
 
   const refreshCase = useCallback(async (id: string) => {
-    if (!id) { setDocs([]); setFacts([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false); return; }
+    if (!id) { setDocs([]); setFacts([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setPreviousMessages([]); setOlderAvailable(false); return; }
     // Load all independent private resources concurrently; avoid three
     // sequential network roundtrips before showing the agent's first question.
     const [files, conversation, candidatesResult, readyResult] = await Promise.all([
@@ -172,12 +173,14 @@ export default function ApplicantTutorChat() {
       return (existing.length ? existing : fileRows.slice(0, 4).map(f => f.id)).slice(0, 4);
     });
     const history = ((conversation.data || []) as MessageRow[]).reverse();
-    // Retire an unanswered legacy intake question from the visible thread,
-    // without deleting or rewriting private database history.
-    const last = history[history.length-1];
-    const displayHistory = last?.role==='model' && isInterviewQuestion(last.content)
-      ? history.slice(0,-1) : history;
-    setMessages(displayHistory);
+    // Keep older chat/legacy intake available for inspection but outside the
+    // active consular conversation. It must never be mistaken for this agent's
+    // question or be used to grade the applicant's next answer.
+    const firstConsular = history.findIndex(message =>
+      message.role==='model' && message.content==='¿Cuál es tu nombre completo, tal como figura en la solicitud?');
+    const activeHistory = firstConsular<0 ? [] : history.slice(firstConsular);
+    setPreviousMessages(firstConsular<0 ? history : history.slice(0,firstConsular));
+    setMessages(activeHistory);
     setOlderAvailable(history.length === 100);
     // The consular simulator, grounded in this applicant's indexed documents,
     // takes priority over every legacy generic intake prompt.
@@ -185,9 +188,11 @@ export default function ApplicantTutorChat() {
       setNotice('Sube el DS-160 y los documentos de respaldo para iniciar una entrevista consular dirigida.');
       return;
     }
+    // A document may already have indexed chunks even if the optional jobs
+    // metadata was created later. Ask the authenticated RAG endpoint first;
+    // a 409 then explains precisely what the applicant should prepare.
     if(!readyJobs?.length) {
-      setNotice('Tus documentos aún necesitan preparación. Pulsa «Preparar búsqueda rápida» para que el agente pueda entrevistarte sobre sus datos.');
-      return;
+      setNotice('Comprobando si tus documentos ya están indexados...');
     }
     if(simulatorRef.current || startingSimulatorCasesRef.current.has(id)) return;
     startingSimulatorCasesRef.current.add(id);
@@ -204,6 +209,12 @@ export default function ApplicantTutorChat() {
         error?:string;questions?:PreparedQuestion[];alerts?:string[];
         excluded?:string[];unindexed?:string[];
       }=await response.json().catch(()=>({}));
+      if(response.status===409) {
+        if(mountedRef.current && activeCaseRef.current===id) setNotice(
+          'Tus documentos no están preparados. Pulsa «⚡ Preparar y comenzar simulacro»; la preparación puede consumir tu cuota de Gemini.'
+        );
+        return;
+      }
       if(!response.ok || !payload.questions?.length) {
         throw new Error(payload.error || 'No se pudieron preparar preguntas documentales.');
       }
@@ -225,7 +236,7 @@ export default function ApplicantTutorChat() {
       // Previous messages from the old generic interview remain in history,
       // but must never drive or replace this first consular question.
       const prompt=run.questions[run.index].question;
-      setMessages([...displayHistory,{role:'model',content:prompt}]);
+      setMessages([...activeHistory,{role:'model',content:prompt}]);
       const {error:saveError}=await supabase.from('applicant_case_messages').insert({
         case_id:id,created_by:loggedUserRef.current,role:'model',content:prompt,
       });
@@ -236,7 +247,7 @@ export default function ApplicantTutorChat() {
     } catch(error){
       if(mountedRef.current && activeCaseRef.current===id) {
         simulatorRef.current=null;setSimulator(null);
-        setMessages(displayHistory);
+        setMessages(activeHistory);
         setError(error instanceof Error ? error.message : 'No se pudo iniciar el simulacro.');
       }
     } finally {
@@ -269,7 +280,7 @@ export default function ApplicantTutorChat() {
     activeCaseRef.current = caseId;
     setError(''); setNotice(''); setTranscript('');
     simulatorRef.current = null; setSimulator(null);
-    setDocs([]); setFacts([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false);
+    setDocs([]); setFacts([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setPreviousMessages([]); setOlderAvailable(false);
     voiceOnRef.current = false; setVoiceOn(false);
     voiceSessionRef.current = '';
     voiceDraftRef.current = '';
@@ -340,9 +351,11 @@ export default function ApplicantTutorChat() {
 
 
   const prepareFastSearch = async () => {
-    const pending = docs.filter(d => selectedDocs.includes(d.id) &&
-      (!indexedIds.includes(d.id) || !facts.some(f=>f.document_id===d.id)));
-    if (!pending.length || loading || busyRef.current) return;
+    const pending = docs.filter(d => selectedDocs.includes(d.id) && !indexedIds.includes(d.id));
+    if (!pending.length || loading || busyRef.current) {
+      if(!pending.length && docs.length && !simulatorRef.current) void refreshCase(caseId);
+      return;
+    }
     busyRef.current = true; setLoading(true); setError(''); setNotice('');
     let successes = 0;
     const failures: string[] = [];
@@ -375,7 +388,7 @@ export default function ApplicantTutorChat() {
       if (activeCaseRef.current === caseId) {
         setIndexedIds((ready||[]).map(row=>String(row.document_id)));
         if (!factResponse.error) setFacts((factResponse.data||[]) as FactRow[]);
-        setNotice(successes + ' documento(s) preparados. Las próximas preguntas usarán fragmentos indexados cuando todos los seleccionados estén listos.');
+        setNotice(successes + ' documento(s) preparados. El Tutor está iniciando el simulacro consular.');
         if (failures.length) setError(failures.join(' | ').slice(0,900));
         if (successes > 0 && !simulatorRef.current) void refreshCase(caseId);
       }
@@ -460,7 +473,7 @@ export default function ApplicantTutorChat() {
         setSpeaking(false);
         // When the document-grounded interview finishes and there is no document for
         // free questions, do not leave the microphone listening indefinitely.
-        if (!simulatorRef.current && !simulatorRef.current && !selectedDocs.length) {
+        if (!simulatorRef.current) {
           stopVoice();
           return;
         }
@@ -671,8 +684,8 @@ export default function ApplicantTutorChat() {
 
   const toggleVoice = () => {
     if (voiceOnRef.current) { stopVoice(); return; }
-    if (!caseId || (!selectedDocs.length && !simulatorRef.current)) {
-      setError('Selecciona un documento para consultar fuera de la entrevista.');
+    if (!caseId || !simulatorRef.current) {
+      setNotice('El Tutor debe iniciar su simulacro antes de utilizar Voz. Prepara primero los documentos.');
       return;
     }
     const Recognition = recognitionConstructor();
@@ -735,7 +748,7 @@ export default function ApplicantTutorChat() {
       if (!voiceOnRef.current || busyRef.current) return;
       const reason = event.error || 'desconocido';
       if (reason === 'no-speech') {
-        setError('No detecté una pregunta. Vuelve a iniciar el micrófono.');
+        setError('No escuché tu respuesta. Comprueba el permiso del micrófono y pulsa Iniciar voz para escuchar nuevamente la pregunta del Tutor.');
       } else {
         setError('No se pudo utilizar el micrófono (' + reason + ').');
       }
@@ -753,14 +766,14 @@ export default function ApplicantTutorChat() {
       }
       // A pause after "qué" must not create a useless API request.
       if (!phrase) {
-        setError('No detecté una pregunta completa. Vuelve a iniciar el micrófono.');
+        setError('No pude escuchar tu respuesta. Pulsa Iniciar voz para volver a escuchar la pregunta.');
         stopVoice();
         return;
       }
       voiceSessionRef.current = phrase;
       voiceDraftRef.current = '';
       if (++voiceRestartRef.current > 2) {
-        setError('La pregunta quedó incompleta. Pulsa Iniciar voz y repítela.');
+        setError('Tu respuesta quedó incompleta. Pulsa Iniciar voz e inténtalo de nuevo.');
         stopVoice();
         return;
       }
@@ -779,12 +792,8 @@ export default function ApplicantTutorChat() {
     voiceRestartRef.current = 0;
     setVoiceOn(true); setError(''); setTranscript('');
     try {
-      if (simulatorRef.current) {
-        const active = simulatorRef.current;
-        readAnswerAloud(active.questions[active.index].question,caseId);
-      } else {
-        engine.start(); setListening(true);
-      }
+      const active = simulatorRef.current;
+      if(active) readAnswerAloud(active.questions[active.index].question,caseId);
     } catch {
       stopVoice();
       setError('No se pudo iniciar la conversación por voz.');
@@ -892,6 +901,19 @@ export default function ApplicantTutorChat() {
           </div>
         )}
         <div className="cm-tutor-chat-messages">
+          {previousMessages.length>0 && (
+            <details className="cm-tutor-previous">
+              <summary>Historial anterior ({previousMessages.length}) — separado del simulacro</summary>
+              <div className="cm-tutor-previous-messages">
+                {previousMessages.map((item,index)=>(
+                  <div key={item.id||index} className={'cm-tutor-chat-bubble '+(item.role==='user'?'is-user':'is-model')}>
+                    <strong>{item.role==='user'?'Tú':'Tutor anterior'}</strong>
+                    <p>{item.content}</p>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
           {olderAvailable && <button type="button" className="cm-tutor-older" onClick={() => void loadOlder()} disabled={loading}>Cargar mensajes anteriores</button>}
           {messages.map((item, index) =>
             <div key={item.id || index} className={'cm-tutor-chat-bubble ' + (item.role === 'user' ? 'is-user' : 'is-model')}>
@@ -935,14 +957,14 @@ export default function ApplicantTutorChat() {
           <button type="button" className="cm-tutor-upload" onClick={() => fileRef.current?.click()} disabled={!caseId || loading}>＋ Subir documentos</button>
           <button type="button" className="cm-tutor-upload" onClick={() => void startSimulator()}
             disabled={!caseId || !docs.length || loading || Boolean(simulator)}>
-            🎓 Simulacro consular (19 módulos)
+            🎓 Iniciar simulacro (19 módulos)
           </button>
           {simulator && <button type="button" className="cm-tutor-upload"
             onClick={stopSimulator}>Terminar simulacro</button>}
           <button type="button" className="cm-tutor-upload" onClick={() => void prepareFastSearch()}
-            disabled={!caseId || loading || selectedDocs.every(id => indexedIds.includes(id) && facts.some(f=>f.document_id===id)) || !selectedDocs.length}
-            title="Prepara una vez los documentos seleccionados para responder más rápido">
-            ⚡ Preparar búsqueda rápida
+            disabled={!caseId || loading || selectedDocs.every(id => indexedIds.includes(id)) || !selectedDocs.length}
+            title="Prepara los documentos seleccionados con Gemini (puede consumir tu cuota) e inicia las preguntas">
+            ⚡ Preparar y comenzar simulacro
           </button>
           <details className="cm-tutor-documents">
             <summary>Documentos ({docs.length}) · {selectedDocs.length} seleccionados</summary>
@@ -994,11 +1016,11 @@ export default function ApplicantTutorChat() {
         ) : (
           <div className="cm-tutor-voice-panel">
             <button type="button" className={'cm-tutor-voice-button ' + (listening ? 'is-listening' : '')} aria-pressed={voiceOn}
-              onClick={toggleVoice} disabled={!caseId || (!simulator && !selectedDocs.length) || loading}>
+              onClick={toggleVoice} disabled={!caseId || !simulator || loading}>
               {voiceOn ? '■ Detener voz' : '🎙 Iniciar voz'}
             </button>
             <div aria-live="polite">
-              {speaking ? 'El Tutor está haciendo su pregunta…' : listening ? 'Escuchando tu respuesta…' : voiceOn ? 'Preparando la siguiente pregunta…' : 'Pulsa Iniciar voz: el Tutor hablará primero.'}
+              {speaking ? 'El Tutor está haciendo su pregunta…' : listening ? 'Escuchando tu respuesta…' : voiceOn ? 'Preparando la siguiente pregunta…' : simulator ? 'Pulsa Iniciar voz: el Tutor hablará primero.' : 'Prepara los documentos e inicia el simulacro para activar Voz.'}
             </div>
             {transcript && <p className="cm-tutor-voice-transcript">Escuché: {transcript}</p>}
             <small>El Tutor dirige la entrevista. La voz depende del navegador y no requiere Gemini para las preguntas guiadas.</small>
