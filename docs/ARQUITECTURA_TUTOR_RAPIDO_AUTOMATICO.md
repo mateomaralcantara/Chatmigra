@@ -72,6 +72,40 @@ tiempo real requeriría una integración distinta; no equivale al Gemini Live ge
 - `applicant_case_answer_cache` SOLO para respuestas que puedan invalidarse
   por modificación de documentos/perfil; no almacenar verdades no verificadas.
 
+## P1 implementado en la rama (activación pendiente)
+
+- \`supabase/setup/chatmi-applicant-tutor-facts.sql\`: tabla privada de hechos y
+  permisos RLS. Requiere instalación manual en el Supabase **de ChatMi**.
+- \`lib/tutor/facts.ts\`: identifica preguntas sobre un único campo y
+  extrae **candidatos**, nunca valores aceptados automáticamente.
+- \`api/applicant-index.ts\`: prepara candidatos de fecha, nombre, visa, etc.
+  al indexar, y recupera propuestas de un índice RAG existente sin usar Gemini.
+- \`src/components/ApplicantTutorChat.tsx\`: en "Documentos" aparece
+  "Datos del expediente"; el titular puede Confirmar/Rechazar cada propuesta.
+- \`api/gemini.ts\`: si existe exactamente un valor revisado válido
+  para el expediente/documentos elegidos, responde ese valor directamente desde
+  Supabase (sin llamada al modelo). Si hay valores revisados contradictorios,
+  informa de la contradicción sin adivinar. Sin datos verificados mantiene
+  el modo anterior (perfil ingresado por el usuario, RAG o PDF directo).
+
+Esta fase **no** activa OCR/indexación pagada al subir un archivo. La extracción
+sigue iniciándose mediante el botón de preparar documentos, respetando límites.
+La cola duradera y la automatización opt-in pertenecen a P2.
+
+### Activación P1
+
+1. Ejecuta SQL del Tutor base y de RAG si aún no estaban instalados.
+2. Ejecuta \`supabase/setup/chatmi-applicant-tutor-facts.sql\` en el
+   **mismo** proyecto que ChatMi. No lo ejecutes en otras aplicaciones.
+3. \`npm run check\` y prueba dos expedientes con usuarios distintos.
+4. En Tutor → Documentos → ⚡ Preparar búsqueda rápida, indexa el documento.
+5. Abre "Datos del expediente", revisa en el PDF original y confirma
+   exclusivamente los datos correctos. Los datos no revisados no se usan como
+   respuestas documentales verificadas.
+6. Pregunta "¿Cuál es la fecha de nacimiento del aplicante?" y verifica una
+   respuesta de solo el valor. Rechaza o elimina el documento y comprueba que
+   deje de usarse. Sin SQL nuevo la interfaz sigue funcionando como antes.
+
 ## Prioridad de implementación
 
 ### P0: asegurar estado existente
