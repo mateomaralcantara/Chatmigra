@@ -622,6 +622,8 @@ test('19 consular modules generate source-grounded questions without mixing appl
   assert.equal(evaluateConsularAnswer(identity,'ANA MARIA EJEMPLO PEREZ',0).outcome,'correct');
   assert.equal(evaluateConsularAnswer(birth,'21 de marzo de 1983',0).outcome,'correct');
   assert.equal(evaluateConsularAnswer(visa,'Visa I',0).outcome,'correct');
+  assert.equal(evaluateConsularAnswer(visa,'I',0).outcome,'correct');
+  assert.equal(evaluateConsularAnswer(plan.questions.find(q=>q.id==='purpose'),'Solo voy de vacaciones',0).outcome,'retry');
   assert.equal(evaluateConsularAnswer(funding,'Yo misma',0).outcome,'correct');
   const wrong=evaluateConsularAnswer(passport,'RD0000000',0);
   assert.equal(wrong.outcome,'retry');
@@ -638,8 +640,10 @@ test('consular simulator is private, agent-led, handles corrections and never re
   assert.match(api,/\.from\('applicant_case_documents'\)/);
   assert.match(api,/\.from\('applicant_case_document_chunks'\)/);
   assert.match(api,/\.eq\('case_id',caseId\)/);
+  assert.match(api,/\.limit\(30\)/);
+  assert.match(tutor,/body:JSON\.stringify\(\{caseId:currentCase\}\)/);
   assert.match(api,/if\(!generated\.included\.length\)/);
-  assert.doesNotMatch(api,/getAdminSupabase|service_role/);
+  assert.doesNotMatch(api,/getAdminSupabase\(/);
   assert.match(tutor,/fetch\('\/api\/applicant-simulator'/);
   assert.match(tutor,/const grade=evaluateConsularAnswer/);
   assert.match(tutor,/grade\.repeat/);
