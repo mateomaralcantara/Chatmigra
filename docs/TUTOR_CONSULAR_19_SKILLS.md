@@ -1,4 +1,4 @@
-# ChatMi · Tutor Consular con 19 skills documentales
+# ChatMi · Tutor Consular con 20 skills documentales
 
 **Estado:** funcionalidad codificada en rama de desarrollo; activar después de \`npm run check\`
 y las pruebas de documentos, RLS, Chat y Voz. No subir expedientes reales a GitHub.
@@ -7,8 +7,8 @@ y las pruebas de documentos, RLS, Chat y Voz. No subir expedientes reales a GitH
 
 **Predeterminado en Tutor Personal:** al seleccionar un expediente con al menos
 un documento indexado, el Tutor abre automáticamente el simulacro consular de
-19 módulos. La primera pregunta es «¿Cuál es tu nombre completo, tal como figura
-en la solicitud?», no «¿Qué aspecto de tu expediente te preocupa más?».
+20 módulos. La primera pregunta es «¿Cómo te llamas? Basta con un nombre
+y un apellido.», no «¿Qué aspecto de tu expediente te preocupa más?».
 
 Si hay una pregunta consular sin contestar, la reanuda sin volver a insertarla.
 El historial genérico anterior se conserva en Supabase pero deja de dirigir
@@ -27,7 +27,7 @@ nuevas tablas SQL.
 
 Documentos privados autorizados → indexar una sola vez con cuota consentida
 → validar identidad del solicitante por documento → reconstruir evidencia
-→ detectar contradicciones → construir plan de 19 skills
+→ detectar contradicciones → construir plan de 20 skills
 → Tutor pregunta → solicitante responde por Chat/Voz
 → evaluador determinista clasifica → feedback específico
 → si respuesta incorrecta, repregunta (hasta dos reintentos)
@@ -45,22 +45,23 @@ Una respuesta sobre propósito migratorio debe reflejar hechos verdaderos.
 | 01 | Identificación personal | Coincidencia de nombres con orden intercambiable |
 | 02 | Nacimiento y nacionalidad | Comparador bilingüe de fechas |
 | 03 | Pasaporte y vigencia | Valor documental exacto; repregunta |
-| 04 | Categoría migratoria | Equivalencias semánticas limitadas y seguras |
-| 05 | Propósito del viaje | Coherencia con categoría declarada, explicación libre |
-| 06 | Invitación y organizador | Organización, actividad, documento correspondiente |
-| 07 | Fechas y cronología | Llegada declarada versus itinerario |
-| 08 | Duración y retorno | Fecha de salida y consistencia |
-| 09 | Alojamiento y contacto | Contacto y localización registrados |
-| 10 | Financiamiento | Origen de fondos y equivalencias válidas |
-| 11 | Ocupación actual | Función declarada y vocabulario comprensible |
-| 12 | Empleador y responsabilidades | Empleador, funciones y consistencia |
-| 13 | Actividad periodística verificable | Diferenciar congreso/encuentro de misión de prensa real |
-| 14 | Formación académica | Estudios declarados y evidencia |
-| 15 | Familia y vínculos | Familiares en EE. UU. y declaraciones previas |
-| 16 | Antecedentes migratorios | Rechazos y antecedentes con respeto a los hechos |
-| 17 | Coherencia entre documentos | Identidad y contradicciones, sin inventar |
-| 18 | Repreguntas imprevistas | Claridad bajo presión y evidencia |
-| 19 | Cierre y rectificaciones | Cambios importantes antes de comparecencia |
+| 04 | Domicilio de residencia | Calle, sector o ciudad sin exigir la dirección completa |
+| 05 | Categoría migratoria | Equivalencias semánticas limitadas y seguras |
+| 06 | Propósito del viaje | Coherencia con categoría declarada, explicación libre |
+| 07 | Invitación y organizador | Organización, actividad, documento correspondiente |
+| 08 | Fechas y cronología | Llegada declarada versus itinerario |
+| 09 | Duración y retorno | Fecha de salida y consistencia |
+| 10 | Alojamiento y contacto | Contacto y localización registrados |
+| 11 | Financiamiento | Origen de fondos y equivalencias válidas |
+| 12 | Ocupación actual | Función declarada y vocabulario comprensible |
+| 13 | Empleador y responsabilidades | Empleador, funciones y consistencia |
+| 14 | Actividad periodística verificable | Diferenciar congreso/encuentro de misión de prensa real |
+| 15 | Formación académica | Estudios declarados y evidencia |
+| 16 | Familia y vínculos | Familiares en EE. UU. y declaraciones previas |
+| 17 | Antecedentes migratorios | Rechazos y antecedentes con respeto a los hechos |
+| 18 | Coherencia entre documentos | Identidad y contradicciones, sin inventar |
+| 19 | Repreguntas imprevistas | Claridad bajo presión y evidencia |
+| 20 | Cierre y rectificaciones | Cambios importantes antes de comparecencia |
 
 Los módulos no son 19 LLM con facturación individual. Son 19 flujos de
 evaluación sobre un solo expediente. Cada pregunta tiene método, fuente,
@@ -132,7 +133,7 @@ antes de memorizar fechas. Jamás aconseja inventar fechas o cargos.
 4. \`npx --yes vercel@65.2.0 dev --listen 3000 --scope monseoweb-project\`.
 5. Abre \`http://localhost:3000/tutor\`, accede al expediente privado y
    pulsa \`Preparar búsqueda rápida\` para documentos no indexados.
-6. Pulsa \`Simulacro consular (19 módulos)\`.
+6. Pulsa \`Iniciar simulacro (20 módulos)\`.
 7. Contesta bien una fecha, luego deliberadamente incorrecta; espera
    feedback documentado y repregunta, con máximo dos reintentos.
 8. Prueba en Voz, incluyendo respuestas breves. Comprueba que las
@@ -141,6 +142,31 @@ antes de memorizar fechas. Jamás aconseja inventar fechas o cargos.
    el simulacro del primero por API con su identificador.
 10. Si hay errores de TypeScript, tests, navegador o RLS, no marcar
     la experiencia como completamente validada hasta corregirlos.
+
+## Rúbrica flexible de respuestas (actualización)
+
+La entrevista es una conversación, **no un examen de dictado**. El agente
+interpreta respuestas naturales: primer nombre y apellido (sin obligar a
+decir nombres intermedios); domicilio mediante calle/sector/ciudad (sin
+recitar código postal); asistencia a congreso/encuentro de prensa (sin decir
+título exacto del evento ni entidad completa); ocupación y trabajo mediante
+paráfrasis. Las explicaciones abiertas no requieren cuatro palabras.
+
+Clasificaciones:
+- \`correct\`: suficiente significado coincidente o equivalente; seguir.
+- \`review\`: respuesta plausible pero sin respaldo semántico suficiente
+  para verificar automáticamente; seguir y conservar posible revisión.
+- \`clarify\`: silencio o respuesta ininteligible; una sola repregunta breve.
+- \`retry\`: contradicción concreta de fecha, pasaporte, identidad, categoría
+  incompatible, ciudad claramente diferente, u ocupación explícita distinta.
+
+Máximo dos reintentos; nunca dictar una historia falsa, presentar
+una interpretación aproximada como hecho confirmado ni forzar que el
+solicitante memorice palabra por palabra los documentos.
+
+El comparador es rápido y principalmente determinista; no equivale
+a comprensión ilimitada de un LLM. Los relatos complejos y cambios
+reales del caso deben revisarse con una persona.
 
 ## Limitaciones reales
 
