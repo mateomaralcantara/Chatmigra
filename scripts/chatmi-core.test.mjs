@@ -287,13 +287,13 @@ test('case tutor answers the last specific question using the correct applicant 
   assert.match(api, /Nunca inventes información migratoria/);
 });
 
-test('case voice collects a full utterance and does not submit a single word', () => {
+test('case voice waits for complete free questions and accepts brief interview replies', () => {
   const tutor = read('src/components/ApplicantTutorChat.tsx');
   assert.match(tutor, /engine\.continuous = true/);
   assert.match(tutor, /engine\.interimResults = true/);
   assert.match(tutor, /const submitRecognizedQuestion/);
-  assert.match(tutor, /split\(\/\\s\+\/\)\.filter\(Boolean\)\.length < 3/);
-  assert.match(tutor, /scheduleQuestion\(1700\)/);
+  assert.match(tutor, /guidedRef\.current \? 1 : 3/);
+  assert.match(tutor, /scheduleQuestion\(guidedRef\.current \? 850 : 1400\)/);
   assert.match(tutor, /voiceSessionRef\.current = phrase/);
   assert.match(tutor, /engine\.stop\(\)/);
   assert.match(tutor, /void askQuestion\(complete, true\)/);
@@ -528,4 +528,56 @@ test('fast-fact classifier never promotes unreviewed data or explanations', () =
   assert.ok(candidates.some(c => c.fact_key === 'visa_type' && c.fact_value === 'I'));
   assert.ok(candidates.some(c => c.fact_key === 'applicant_name' && c.fact_value === 'ANA EJEMPLO'));
   assert.ok(!candidates.some(c => c.fact_key === 'passport_number'));
+});
+
+
+test('guided Tutor starts the interview and automatically asks every next question without Gemini', () => {
+  const source = read('lib/tutor/interview.ts');
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const sandbox = { module: { exports: {} } };
+  sandbox.exports = sandbox.module.exports;
+  vm.runInNewContext(compiled, sandbox);
+  const { interviewProgress, INTERVIEW, INTERVIEW_COMPLETE, naturalSpanishSpeech } = sandbox.module.exports;
+  const history = [];
+  const profile = { nationality:'Dominicana', destination:'Estados Unidos', visa_type:'I' };
+  let state = interviewProgress(history, profile);
+  assert.equal(state.nextQuestion, INTERVIEW.goal);
+  assert.equal(state.pending, false);
+  for (const [prompt, answer] of [
+    [INTERVIEW.goal,'Cubrir una noticia'],
+    [INTERVIEW.refusal,'Sí'],
+    [INTERVIEW.refusalDetails,'En el consulado, en 2022'],
+    [INTERVIEW.schedule,'En enero'],
+    [INTERVIEW.documents,'Pasaporte y DS 160'],
+    [INTERVIEW.priority,'El tiempo de aprobación'],
+    [INTERVIEW.firstReview,'Los documentos'],
+  ]) {
+    assert.equal(state.nextQuestion, prompt);
+    history.push({role:'model',content:prompt});
+    assert.equal(interviewProgress(history,profile).pending,true);
+    history.push({role:'user',content:answer});
+    state = interviewProgress(history,profile);
+  }
+  assert.equal(state.nextQuestion,null);
+  assert.equal(state.completed,true);
+  assert.match(INTERVIEW_COMPLETE,/Terminamos la entrevista/);
+  assert.equal(naturalSpanishSpeech('V I S A tipo I'), 'VISA tipo I');
+  assert.equal(naturalSpanishSpeech('Nombre completo'), 'Nombre completo');
+  assert.equal(interviewProgress([], {nationality:'',destination:'',visa_type:''}).nextQuestion, INTERVIEW.goal);
+
+  const tutor=read('src/components/ApplicantTutorChat.tsx');
+  assert.match(tutor, /const state = interviewProgress\(history, profile\)/);
+  assert.match(tutor, /const followUp = interviewProgress\(afterAnswer, activeProfile\)/);
+  assert.match(tutor, /if \(guidedRef\.current && state\.pending && state\.nextQuestion\)/);
+  assert.match(tutor, /readAnswerAloud\(interview\.nextQuestion, caseId\)/);
+  assert.match(tutor, /naturalSpanishSpeech\(answer\)/);
+  assert.match(tutor, /getVoices\(\)/);
+  assert.match(tutor, /utterance\.rate = 1\.12/);
+  assert.match(tutor, /850/);
+  assert.match(tutor, /Pausar entrevista/);
+  assert.match(tutor, /Reanudar entrevista/);
+  assert.match(tutor, /Entrevista dirigida por el agente/);
+  assert.match(tutor, /Guardar tu respuesta|Guardando tu respuesta/);
 });
