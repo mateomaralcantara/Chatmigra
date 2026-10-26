@@ -135,13 +135,20 @@ export default function ApplicantTutorChat() {
 
   const refreshCase = useCallback(async (id: string) => {
     if (!id) { setDocs([]); setFacts([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setOlderAvailable(false); return; }
-    const [files, conversation] = await Promise.all([
+    // Load all independent private resources concurrently; avoid three
+    // sequential network roundtrips before showing the agent's first question.
+    const [files, conversation, candidatesResult, readyResult] = await Promise.all([
       supabase.from('applicant_case_documents')
         .select('id,filename,mime_type,storage_path,created_at')
         .eq('case_id', id).order('created_at', { ascending: false }),
       supabase.from('applicant_case_messages')
         .select('id,role,content,created_at')
         .eq('case_id', id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('applicant_case_facts')
+        .select('id,fact_key,fact_value,document_id,verification_status')
+        .eq('case_id',id).order('created_at',{ascending:false}).limit(60),
+      supabase.from('applicant_case_index_jobs')
+        .select('document_id,status').eq('case_id',id).eq('status','ready'),
     ]);
     if (files.error || conversation.error) throw new Error('No se pudieron cargar los documentos o el historial.');
     if (!mountedRef.current || activeCaseRef.current !== id) return;
@@ -149,15 +156,11 @@ export default function ApplicantTutorChat() {
     setDocs(fileRows);
     // Candidate memory is optional until the new SQL is installed. Never
     // show an unverified extraction as an accepted answer.
-    const {data: candidates} = await supabase.from('applicant_case_facts')
-      .select('id,fact_key,fact_value,document_id,verification_status')
-      .eq('case_id',id).order('created_at',{ascending:false}).limit(60);
     if(mountedRef.current && activeCaseRef.current === id) {
-      setFacts((candidates || []) as FactRow[]);
+      setFacts((candidatesResult.data || []) as FactRow[]);
     }
-    // This optional query fails harmlessly until ChatMi's RAG SQL is installed.
-    const { data: readyJobs } = await supabase.from('applicant_case_index_jobs')
-      .select('document_id,status').eq('case_id',id).eq('status','ready');
+    // Optional tables may be missing in an older installation.
+    const readyJobs = readyResult.data;
     if (mountedRef.current && activeCaseRef.current === id) {
       setIndexedIds((readyJobs || []).map(row => String(row.document_id)));
     }
@@ -664,7 +667,12 @@ export default function ApplicantTutorChat() {
     if (!next) return;
     const profile = caseProfilesRef.current.find(item => item.id === caseId) || {};
     const interview = interviewProgress(messagesRef.current, profile);
-    if (!interview.nextQuestion || interview.pending) return;
+    if (!interview.nextQuestion) {
+      guidedRef.current = false; setGuided(false);
+      setNotice('La entrevista inicial está completa.');
+      return;
+    }
+    if (interview.pending) return;
     const prompt = interview.nextQuestion;
     const snapshot = [...messagesRef.current];
     setMessages([...snapshot, {role:'model',content:prompt}]);
