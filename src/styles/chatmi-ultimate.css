@@ -1681,3 +1681,17 @@ input {
   .cm-tutor-interview-bar {font-size:11px;padding:6px;gap:6px;}
   .cm-tutor-interview-bar button {padding:4px 7px;}
 }
+
+/* Source conflict disclosure in applicant-led practice. */
+.cm-tutor-simulator-alerts {
+  border: 1px solid #dbab62;
+  background: #fff8ed;
+  color: #563b18;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  max-height: 145px;
+  overflow: auto;
+}
+.cm-tutor-simulator-alerts summary {font-weight: 700;cursor:pointer;}
+.cm-tutor-simulator-alerts p {margin: 6px 0;line-height: 1.45;}
