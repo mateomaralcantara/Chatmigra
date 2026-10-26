@@ -710,7 +710,7 @@ test('document-backed interview starts only when prepared; voice cannot silently
   assert.match(ui,/setMessages\(activeHistory\)/);
   assert.match(ui,/response\.status===409/);
   assert.match(ui,/la preparación puede consumir tu cuota de Gemini/);
-  assert.match(ui,/if\(!caseId \|\| !simulatorRef\.current\)/);
+  assert.match(ui,/if\s*\(!caseId \|\| !simulatorRef\.current\)/);
   assert.match(ui,/if\(active\) readAnswerAloud\(active\.questions\[active\.index\]\.question,caseId\)/);
   assert.match(ui,/disabled=\{!caseId \|\| !simulator \|\| loading\}/);
   assert.match(ui,/No escuché tu respuesta/);
