@@ -67,10 +67,10 @@ function exactFactReply(question: string, response: string): string {
     const numericDates = [...cleaned.matchAll(/\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})\b/g)];
     if (numericDates.length === 1) return numericDates[0][0];
   }
-  cleaned = cleaned.replace(/^\s*(?:según (?:el perfil|los documentos|el expediente),?\s*)/i, '');
+  cleaned = cleaned.replace(/^\s*según\s+(?:el perfil(?: del expediente)?|los documentos|el expediente)\s*,?\s*/i, '');
   cleaned = cleaned.replace(/^(?:la|el|su)\s+(?:fecha de nacimiento(?: de (?:la|el) aplicante)?|nombre(?: completo)?|nacionalidad|tipo de visa|visa solicitada|país de destino)\s+(?:es|corresponde a|:)\s*(?:el\s+|la\s+)?/i, '');
   cleaned = cleaned.replace(/\s*\(\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}\s*\)\s*\.?$/i, '');
-  return cleaned.trim();
+  return cleaned.trim().replace(/\.$/, '');
 }
 
 export default function ApplicantTutorChat() {
