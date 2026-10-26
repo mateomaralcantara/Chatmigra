@@ -257,7 +257,7 @@ function dateIsCompatible(answer:string,expected:string):boolean {
   if(a===b)return true;
   // With a full date on the form, day + month are enough to rehearse a
   // natural answer when the applicant does not mention the year.
-  const parts=a.match(/\b(\d{1,2})\s+([a-z]+)\b/);
+  const parts=a.match(/\b(\d{1,2})\s+(?:de\s+)?([a-z]+)\b/);
   if(parts && monthNames[parts[2]] && /^\d{4}-\d{2}-\d{2}$/.test(b)) {
     return Number(parts[1])===Number(b.slice(-2)) && monthNames[parts[2]]===b.slice(5,7);
   }
@@ -282,8 +282,29 @@ function phraseIsCompatible(answer:string,expected:string):boolean {
 function naturalAddress(answer:string):boolean {
   const tokens=simpleLocation(answer);
   const base=norm(answer);
-  return tokens.some(token=>token.length>2 && !['si','no','aqui','alla'].includes(token)) ||
-    /\b\d+\b/.test(base) && /\b(?:calle|sector|avenida|barrio)\b/.test(base);
+  const locationContext=/\b(?:calle|avenida|av|sector|barrio|urbanizacion|ciudad|provincia|domicilio|direccion|vivo|resido|residencia|numero|santo domingo|santiago|vega|moca|bonao|jarabacoa|new york|nueva york|miami|pennsylvania)\b/.test(base);
+  return locationContext && (tokens.some(token=>token.length>2 && !['si','no','aqui','alla'].includes(token)) ||
+    /\b\d+\b/.test(base));
+}
+function knownCity(value:string):string|null {
+  const text=norm(value);
+  for(const city of ['santo domingo','santiago','la vega','jarabacoa','bonao','moca','miami','new york','nueva york','hazleton','pennsylvania']){
+    if(new RegExp('\\b'+city+'\\b').test(text))return city==='nueva york'?'new york':city;
+  }
+  return null;
+}
+function incompatibleOccupation(answer:string,expected:string):boolean {
+  const jobs:RegExp[]=[
+    /\b(?:periodista|periodismo|reportera?|corresponsal|journalist|reporter)\b/,
+    /\b(?:maestr[oa]|docente|profesor[ae]?|teacher)\b/,
+    /\b(?:abogad[oa]|lawyer|attorney)\b/,
+    /\b(?:medic[oa]|doctor[ae]?|physician)\b/,
+    /\b(?:ingenier[oa]|engineer)\b/,
+    /\b(?:contad[oa]r|accountant)\b/,
+  ];
+  const source=jobs.findIndex(pattern=>pattern.test(norm(expected)));
+  const reply=jobs.findIndex(pattern=>pattern.test(norm(answer)));
+  return source>=0 && reply>=0 && source!==reply;
 }
 function accepted(message='Bien, entendido. Continuemos.'):InterviewGrade {
   return {outcome:'correct',feedback:message,repeat:false};
@@ -370,6 +391,9 @@ export function evaluateConsularAnswer(
   // A normal spoken address need not recite ZIP code, province, full
   // street name, or all of an organization's contact details.
   if(['residence','address'].includes(item.id)) {
+    const submittedCity=knownCity(spoken),declaredCity=knownCity(item.expected||'');
+    if(submittedCity && declaredCity && submittedCity!==declaredCity)
+      return conflict(item,attempts);
     if(naturalAddress(spoken) || phraseIsCompatible(spoken,item.expected||''))
       return accepted();
     return a.length>2?acceptedWithCaution():
@@ -383,6 +407,9 @@ export function evaluateConsularAnswer(
     if(expected==='self' && /\b(?:empresa|organizacion|patrocinador|familiar|padre|madre)\b/.test(a))
       return conflict(item,attempts);
   }
+
+  if(item.id==='occupation' && item.expected &&
+     incompatibleOccupation(spoken,item.expected))return conflict(item,attempts);
 
   // Other document-backed questions are assessed for meaningful overlap,
   // not a fixed word count or literal reproduction. Ambiguity is noted
