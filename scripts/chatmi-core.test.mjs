@@ -692,7 +692,9 @@ test('Tutor opens consular interview automatically and resumes without legacy pr
   assert.match(autoStart,/resumeConsularInterview\(history,payload\.questions\)/);
   assert.match(autoStart,/if\(progress\.pending\)/);
   assert.match(autoStart,/if\(!readyJobs\?\.length\)/);
-  assert.match(autoStart,/setMessages\(\[\.\.\.history,\{role:'model',content:prompt\}\]\)/);
+  assert.match(autoStart,/setMessages\(\[\.\.\.displayHistory,\{role:'model',content:prompt\}\]\)/);
+  assert.match(autoStart,/isInterviewQuestion\(last\.content\)/);
+  assert.match(ui,/if\(startingSimulatorCasesRef\.current\.has\(caseId\)\)/);
   assert.doesNotMatch(autoStart,/interviewProgress/);
   assert.doesNotMatch(autoStart,/state\.nextQuestion/);
   assert.match(ui,/Pausar simulacro/);
