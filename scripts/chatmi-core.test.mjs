@@ -482,7 +482,9 @@ test('tutor fast-fact router uses ONLY verified case facts before Gemini', () =>
   assert.match(facts, /export function directFactKey/);
   assert.match(facts, /export function extractCaseFactCandidates/);
   assert.match(facts, /date_of_birth/);
-  assert.match(index, /extractCaseFactCandidates\(output\)/);
+  assert.match(index, /const proposed = extractCaseFactCandidates\(extractedText\)/);
+  assert.match(index, /await suggestFacts\(output\)/);
+  assert.match(index, /await suggestFacts\(storedChunks\.map/);
   assert.match(index, /verification_status:'pending_review'/);
   assert.match(api, /directFactKey\(lastQuestion\)/);
   assert.match(api, /auth\.supabase[\s\S]*?\.from\('applicant_case_facts'\)/);
