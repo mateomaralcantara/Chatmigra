@@ -330,7 +330,7 @@ export default function GentlePractice({caseId,onExit}:Props) {
       <header className="cm-tutor-chat-header">
         <div>
           <h2>Práctica Consular Amable</h2>
-          <p>18 preguntas · sin calificaciones ni reproches · sin necesidad de documentos</p>
+          <p>18 preguntas · pausa mínima de {GENTLE_QUESTION_PAUSE_MS/1000} segundos entre preguntas · sin reproches ni documentos</p>
         </div>
         <button type="button" className="cm-tutor-new-case" disabled={busy} onClick={()=>void exitPractice()}>
           Volver al Tutor
