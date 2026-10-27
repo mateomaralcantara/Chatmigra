@@ -777,3 +777,88 @@ test('consular Tutor understands conversational summaries instead of requiring w
   assert.equal(grade('invitation','AIPMA','No sé').outcome,'clarify');
   assert.equal(grade('invitation','AIPMA','No sé','document',2).repeat,false);
 });
+
+
+test('Práctica Consular Amable contains exactly the 18 requested questions, independently of Gemini', () => {
+  const source=read('lib/tutor/gentlePractice.ts');
+  const ui=read('src/components/GentlePractice.tsx');
+  const parent=read('src/components/ApplicantTutorChat.tsx');
+  const compiled=ts.transpileModule(source,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
+  }).outputText;
+  const sandbox={exports:{}};
+  vm.runInNewContext(compiled,sandbox);
+  const api=sandbox.exports;
+  assert.equal(api.GENTLE_QUESTIONS.length,18);
+  assert.equal(new Set(api.GENTLE_QUESTIONS.map(q=>q.id)).size,18);
+  assert.equal(api.GENTLE_QUESTIONS[0].text,'¿A qué va a Estados Unidos?');
+  assert.equal(api.GENTLE_QUESTIONS[17].text,'¿Cuál es su contacto en Estados Unidos?');
+  assert.match(ui,/5000/);
+  assert.match(ui,/Terminé de responder/);
+  assert.match(ui,/Pausar práctica/);
+  assert.match(ui,/applicant_case_messages/);
+  assert.doesNotMatch(ui,/evaluateConsularAnswer|\/api\/gemini|\/api\/applicant-simulator/);
+  assert.match(parent,/Práctica tranquila/);
+  assert.match(parent,/GENTLE_WELCOME/);
+});
+
+test('Práctica Amable advances without evaluating or reproaching short answers', () => {
+  const source=read('lib/tutor/gentlePractice.ts');
+  const js=ts.transpileModule(source,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
+  }).outputText;
+  const sandbox={exports:{}};
+  vm.runInNewContext(js,sandbox);
+  const {GENTLE_WELCOME,GENTLE_FINISHED,GENTLE_QUESTIONS,nextGentleIndex,resumeGentlePractice}=sandbox.exports;
+  assert.equal(nextGentleIndex(0,'No sé'),1);
+  assert.equal(nextGentleIndex(6,'No tengo familiares'),8);
+  assert.equal(nextGentleIndex(6,'Sí'),7);
+  assert.equal(nextGentleIndex(14,'No soy profesional'),16);
+  assert.equal(nextGentleIndex(14,'Sí'),15);
+  let history=[
+    {role:'model',content:GENTLE_WELCOME},
+    {role:'model',content:GENTLE_QUESTIONS[0].text},
+  ];
+  let state=resumeGentlePractice(history);
+  assert.equal(state.index,0);
+  assert.equal(state.awaiting,true);
+  for(let index=0;index<GENTLE_QUESTIONS.length;index++){
+    const answer='No sé';
+    history.push({role:'user',content:answer});
+    const next=nextGentleIndex(index,answer);
+    history.push({role:'model',content:'Gracias.'});
+    history.push({role:'model',content:next===18?GENTLE_FINISHED:GENTLE_QUESTIONS[next].text});
+    state=resumeGentlePractice(history);
+    index=next-1;
+  }
+  assert.equal(state.completed,true);
+  assert.equal(state.answered,16); // Family-visit and studies questions skipped on clear "No"
+  assert.equal(state.awaiting,false);
+});
+
+test('Práctica Amable preserves an unanswered question across pauses and reloads', () => {
+  const source=read('lib/tutor/gentlePractice.ts');
+  const js=ts.transpileModule(source,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
+  }).outputText;
+  const sandbox={exports:{}};
+  vm.runInNewContext(js,sandbox);
+  const {GENTLE_WELCOME,GENTLE_PAUSED,GENTLE_RESUMED,GENTLE_QUESTIONS,resumeGentlePractice}=sandbox.exports;
+  const history=[
+    {role:'model',content:GENTLE_WELCOME},
+    {role:'model',content:GENTLE_QUESTIONS[0].text},
+    {role:'user',content:'Voy a un encuentro'},
+    {role:'model',content:'Gracias.'},
+    {role:'model',content:GENTLE_QUESTIONS[1].text},
+    {role:'model',content:GENTLE_PAUSED},
+  ];
+  let state=resumeGentlePractice(history);
+  assert.equal(state.index,1);
+  assert.equal(state.awaiting,true);
+  assert.equal(state.paused,true);
+  history.push({role:'model',content:GENTLE_RESUMED});
+  state=resumeGentlePractice(history);
+  assert.equal(state.index,1);
+  assert.equal(state.awaiting,true);
+  assert.equal(state.paused,false);
+});
