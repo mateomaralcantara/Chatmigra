@@ -813,6 +813,7 @@ test('Práctica Amable advances without evaluating or reproaching short answers'
   assert.equal(nextGentleIndex(0,'No sé'),1);
   assert.equal(nextGentleIndex(6,'No tengo familiares'),8);
   assert.equal(nextGentleIndex(6,'Sí'),7);
+  assert.equal(nextGentleIndex(6,'No sé'),7);
   assert.equal(nextGentleIndex(14,'No soy profesional'),16);
   assert.equal(nextGentleIndex(14,'Sí'),15);
   let history=[
@@ -832,7 +833,7 @@ test('Práctica Amable advances without evaluating or reproaching short answers'
     index=next-1;
   }
   assert.equal(state.completed,true);
-  assert.equal(state.answered,16); // Family-visit and studies questions skipped on clear "No"
+  assert.equal(state.answered,18); // An uncertain answer must not skip conditional questions
   assert.equal(state.awaiting,false);
 });
 
