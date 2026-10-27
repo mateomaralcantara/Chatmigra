@@ -875,6 +875,8 @@ test('Tutor enters the kind consular interview automatically for an authenticate
   assert.match(parent,/const \[gentleOpen, setGentleOpen\] = useState\(\(\) => Boolean\(currentCaseId\(\)\)\)/);
   assert.match(parent,/gentleOpenRef\.current = Boolean\(caseId\); setGentleOpen\(Boolean\(caseId\)\)/);
   assert.match(parent,/applicant_name:'Práctica consular'/);
+  assert.match(parent,/initialCaseRequestRef\.current/);
+  assert.match(parent,/useRef<Promise<CaseRow> \| null>/);
   assert.match(parent,/if\(gentleOpenRef\.current\) return/);
   assert.match(practice,/if\(start<0\)\{await begin\(\);return;\}/);
   assert.match(practice,/if\(recovered\.paused \|\| !recovered\.awaiting\)/);
