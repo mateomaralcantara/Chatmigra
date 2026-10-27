@@ -54,7 +54,10 @@ export type GentleProgress = {
 
 /** Reanuda la última sesión privada; no mezcla preguntas del simulador documental. */
 export function resumeGentlePractice(history:readonly GentleMessage[]):GentleProgress {
-  const start=history.findLastIndex(m=>m.role==='model'&&m.content===GENTLE_WELCOME);
+  let start=-1;
+  for(let i=history.length-1;i>=0;i--){
+    if(history[i].role==='model'&&history[i].content===GENTLE_WELCOME){start=i;break;}
+  }
   if(start<0)return {started:false,completed:false,paused:false,index:0,awaiting:false,answered:0};
   let index=0,awaiting=false,answered=0,paused=false,completed=false;
   for(const message of history.slice(start+1)){
