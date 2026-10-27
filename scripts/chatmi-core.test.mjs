@@ -892,3 +892,32 @@ test('A silent applicant is never submitted as an empty answer and voice can kee
   assert.match(voice,/setTimeout\(\(\)=>void submitAnswer\(transcriptRef\.current,true\),5000\)/);
   assert.match(voice,/Terminé de responder/);
 });
+
+
+test('Práctica Consular Amable waits at least 15 seconds after each saved answer', () => {
+  const source=read('lib/tutor/gentlePractice.ts');
+  const code=ts.transpileModule(source,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
+  }).outputText;
+  const sandbox={exports:{}};
+  vm.runInNewContext(code,sandbox);
+  const {GENTLE_QUESTION_PAUSE_MS,remainingGentleQuestionPause}=sandbox.exports;
+  assert.equal(GENTLE_QUESTION_PAUSE_MS,15000);
+  const started=Date.parse('2026-10-27T06:30:00.000Z');
+  const history=[{role:'user',content:'Voy al encuentro',created_at:new Date(started).toISOString()}];
+  assert.equal(remainingGentleQuestionPause(history,started),15000);
+  assert.equal(remainingGentleQuestionPause(history,started+5000),10000);
+  assert.equal(remainingGentleQuestionPause(history,started+14999),1);
+  assert.equal(remainingGentleQuestionPause(history,started+15000),0);
+  assert.equal(remainingGentleQuestionPause(history,started+17000),0);
+  assert.equal(remainingGentleQuestionPause([],started),15000);
+  const ui=read('src/components/GentlePractice.tsx');
+  const submission=ui.slice(ui.indexOf('const submitAnswer='),ui.indexOf('const begin='));
+  assert.match(submission,/role:'user',content:text.slice\(0,12000\)/);
+  assert.doesNotMatch(submission,/role:'model',content:prompt/);
+  assert.match(ui,/setTimeout\(\(\)=>\{/);
+  assert.match(ui,/remainingGentleQuestionPause\(messages,Date\.now\(\)\)/);
+  assert.match(ui,/void save\(\[\{role:'model',content:prompt\}\]\)/);
+  assert.match(ui,/progress\.paused/);
+  assert.match(ui,/setWaitingSeconds\(Math\.ceil\(ms\/1000\)\)/);
+});
