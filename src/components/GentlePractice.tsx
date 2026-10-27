@@ -2,13 +2,12 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { supabase } from '../services/supabaseClient';
 import {
   GENTLE_FINISHED, GENTLE_PAUSED, GENTLE_QUESTIONS, GENTLE_RESUMED, GENTLE_WELCOME,
-  GENTLE_QUESTION_PAUSE_MS, remainingGentleQuestionPause,
   nextGentleIndex, resumeGentlePractice,
   type GentleMessage, type GentleProgress,
 } from '../../lib/tutor/gentlePractice';
 
 type Message = GentleMessage & { id?: string; created_at?: string };
-type RecognitionResult = { results: ArrayLike<ArrayLike<{ transcript: string }>> };
+type RecognitionResult = { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?:boolean }> };
 type Recognition = {
   lang:string;continuous:boolean;interimResults:boolean;
   onresult:((event:RecognitionResult)=>void)|null;
@@ -40,8 +39,6 @@ export default function GentlePractice({caseId,onExit}:Props) {
   const [voiceEnabled,setVoiceEnabled]=useState(false);
   const [listening,setListening]=useState(false);
   const [speaking,setSpeaking]=useState(false);
-  const [waitingSeconds,setWaitingSeconds]=useState<number|null>(null);
-  const [advanceFailed,setAdvanceFailed]=useState(false);
   const recordsRef=useRef<Message[]>([]);
   const progressRef=useRef<GentleProgress>(FIRST);
   const micRef=useRef<Recognition|null>(null);
@@ -70,8 +67,7 @@ export default function GentlePractice({caseId,onExit}:Props) {
     }));
     const {error:saveError}=await supabase.from('applicant_case_messages').insert(rows);
     if(saveError)throw new Error('No se pudo guardar tu práctica. Inténtalo nuevamente.');
-    // Conservar en pantalla la misma fecha usada en Supabase, también para el
-    // temporizador: recargar no debe adelantar la pregunta siguiente.
+    // Los turnos se reconstruyen desde Supabase si se recarga la página.
     update([...recordsRef.current,...rows]);
   };
 
@@ -117,20 +113,20 @@ export default function GentlePractice({caseId,onExit}:Props) {
     if(spoken){micRef.current?.stop();setListening(false);}
     else if(voiceRef.current){stopVoice();}
     const next=nextGentleIndex(state.index,text);
-    setAdvanceFailed(false);
+    const prompt=next<GENTLE_QUESTIONS.length?GENTLE_QUESTIONS[next].text:GENTLE_FINISHED;
     try{
-      // La respuesta se guarda primero. El siguiente enunciado NO se muestra
-      // ni se pronuncia hasta que hayan pasado al menos 15 segundos.
+      // La siguiente pregunta aparece inmediatamente después de guardar
+      // la respuesta. No hay un intervalo adicional de 15 segundos.
       await save([
         {role:'user',content:text.slice(0,12000)},
         {role:'model',content:'Gracias.'},
-        ...(next===GENTLE_QUESTIONS.length
-          ? [{role:'model' as const,content:GENTLE_FINISHED}]
-          : []),
+        {role:'model',content:prompt},
       ]);
       setAnswer('');setTranscript('');transcriptRef.current='';
       if(next===GENTLE_QUESTIONS.length){
         stopVoice();setNotice('Práctica finalizada. Puedes repetirla cuando quieras.');
+      }else if(spoken && voiceRef.current){
+        speak(prompt);
       }
     }catch(err){
       setError(err instanceof Error?err.message:'No se pudo guardar la respuesta.');
@@ -154,12 +150,10 @@ export default function GentlePractice({caseId,onExit}:Props) {
         ]);
       }else if(current.paused){
         await save([{role:'model',content:GENTLE_RESUMED}]);
-      }else if(!current.awaiting && current.index<GENTLE_QUESTIONS.length &&
-        current.answered===0){
-        // Primera pregunta sin respuesta: iniciar enseguida.
+      }else if(!current.awaiting && current.index<GENTLE_QUESTIONS.length){
+        // Recupera cualquier pregunta pendiente tras cierre o recarga.
         await save([{role:'model',content:GENTLE_QUESTIONS[current.index].text}]);
       }
-      // Si ya existe una respuesta, el temporizador controla el siguiente turno.
     }catch(err){setError(err instanceof Error?err.message:'No se pudo iniciar la práctica.');}
     finally{busyRef.current=false;if(aliveRef.current)setBusy(false);}
   };
@@ -182,13 +176,18 @@ export default function GentlePractice({caseId,onExit}:Props) {
     mic.lang='es-DO';mic.continuous=true;mic.interimResults=true;
     mic.onresult=(event)=>{
       if(!voiceRef.current || submittingRef.current)return;
-      const current=Array.from(event.results).map(result=>result[0]?.transcript||'').join(' ')
+      const results=Array.from(event.results);
+      const current=results.map(result=>result[0]?.transcript||'').join(' ')
         .replace(/\s+/g,' ').trim();
       transcriptRef.current=current;setTranscript(current);clearTimer();
       if(current)emptyRestarts=0;
-      // Pausa generosa: solo finaliza tras 5 segundos sin nuevas palabras.
-      // El usuario puede pulsar «Terminé de responder» antes.
-      if(current)timerRef.current=setTimeout(()=>void submitAnswer(transcriptRef.current,true),5000);
+      // La respuesta final reconocida recibe una pausa breve para permitir
+      // que el solicitante continúe hablando. La voz se envía únicamente
+      // cuando deja de llegar texto nuevo, nunca en plena intervención.
+      const last=results[results.length-1];
+      const finalTranscript=last?.isFinal===true;
+      const silenceMs=finalTranscript?1500:2800;
+      if(current)timerRef.current=setTimeout(()=>void submitAnswer(transcriptRef.current,true),silenceMs);
     };
     mic.onend=()=>{
       setListening(false);
@@ -261,49 +260,6 @@ export default function GentlePractice({caseId,onExit}:Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[caseId]);
 
-  // Programar una sola pregunta por turno, no antes de que hayan pasado
-  // 15 segundos desde la respuesta, aun después de una recarga o pausa.
-  useEffect(()=>{
-    if(advanceFailed || !progress.started || progress.completed || progress.paused ||
-      progress.awaiting || busy || progress.index>=GENTLE_QUESTIONS.length){
-      setWaitingSeconds(null);
-      return;
-    }
-    const prompt=GENTLE_QUESTIONS[progress.index].text;
-    const refreshCountdown=()=>{
-      const ms=remainingGentleQuestionPause(messages,Date.now());
-      setWaitingSeconds(Math.ceil(ms/1000));
-    };
-    refreshCountdown();
-    const countdown=setInterval(refreshCountdown,500);
-    const remaining=remainingGentleQuestionPause(messages,Date.now());
-    const release=setTimeout(()=>{
-      const state=progressRef.current;
-      if(!aliveRef.current || busyRef.current || !state.started || state.completed ||
-        state.paused || state.awaiting || state.index!==progress.index)return;
-      // Nunca permitir que una espera ya consumida se publique dos veces.
-      busyRef.current=true;
-      setBusy(true);
-      void save([{role:'model',content:prompt}])
-        .then(()=>{
-          setWaitingSeconds(null);
-          if(voiceRef.current)speak(prompt);
-        })
-        .catch(err=>{
-          setAdvanceFailed(true);
-          setError(err instanceof Error ? err.message : 'No se pudo continuar la práctica.');
-        })
-        .finally(()=>{
-          busyRef.current=false;
-          if(aliveRef.current)setBusy(false);
-        });
-    },remaining);
-    return ()=>{clearInterval(countdown);clearTimeout(release);};
-    // El estado guardado, y no una petición a Gemini, decide cuándo continuar.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[messages,progress.started,progress.completed,progress.paused,progress.awaiting,
-     progress.index,busy,advanceFailed]);
-
   useEffect(()=>{endRef.current?.scrollIntoView({block:'end',behavior:'smooth'});},[messages]);
 
   const exitPractice=async()=>{
@@ -333,7 +289,7 @@ export default function GentlePractice({caseId,onExit}:Props) {
       <header className="cm-tutor-chat-header">
         <div>
           <h2>Práctica Consular Amable</h2>
-          <p>18 preguntas · pausa mínima de {GENTLE_QUESTION_PAUSE_MS/1000} segundos entre preguntas · sin reproches ni documentos</p>
+          <p>18 preguntas · siguiente pregunta automática al terminar de responder · sin reproches ni documentos</p>
         </div>
         <button type="button" className="cm-tutor-new-case" disabled={busy} onClick={()=>void exitPractice()}>
           Volver al Tutor
@@ -370,16 +326,6 @@ export default function GentlePractice({caseId,onExit}:Props) {
         {error&&<p role="alert" className="cm-inline-error">{error}</p>}
         {notice&&<p role="status" className="cm-tutor-chat-notice">{notice}</p>}
         {busy&&<p role="status" className="cm-tutor-chat-thinking">Guardando práctica...</p>}
-        {waitingSeconds!==null && !progress.awaiting && !progress.paused && !progress.completed && (
-          <p role="status" className="cm-tutor-chat-notice">
-            Gracias por responder. La próxima pregunta llegará en {waitingSeconds} segundos.
-          </p>
-        )}
-        {advanceFailed && !progress.awaiting && !progress.paused && (
-          <button type="button" className="cm-tutor-upload"
-            onClick={()=>{setError('');setAdvanceFailed(false);}}
-            disabled={busy}>Reintentar siguiente pregunta</button>
-        )}
         {progress.started&&!progress.completed&&!progress.paused&&progress.awaiting&&(
           <>
             <div className="cm-tutor-documents-bar">
