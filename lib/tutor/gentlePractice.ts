@@ -15,20 +15,6 @@ export const GENTLE_FINISHED =
 export const GENTLE_PAUSED = 'Práctica tranquila pausada. Puedes reanudarla cuando desees.';
 export const GENTLE_RESUMED = 'Continuemos tranquilamente desde donde quedamos.';
 
-/** Pausa mínima entre el cierre de la respuesta y la siguiente pregunta. */
-export const GENTLE_QUESTION_PAUSE_MS = 15_000;
-
-/** Se recalcula al recargar desde la fecha persistida de la última respuesta. */
-export function remainingGentleQuestionPause(
-  history:readonly (GentleMessage & {created_at?:string})[],
-  now:number,
-):number {
-  const lastAnswer=[...history].reverse().find(message=>message.role==='user');
-  const answeredAt=lastAnswer?.created_at ? Date.parse(lastAnswer.created_at) : NaN;
-  if(!Number.isFinite(answeredAt))return GENTLE_QUESTION_PAUSE_MS;
-  return Math.max(0,GENTLE_QUESTION_PAUSE_MS-(now-answeredAt));
-}
-
 export const GENTLE_QUESTIONS: readonly GentleQuestion[] = [
   {id:'purpose',group:'Motivo del viaje',text:'¿A qué va a Estados Unidos?'},
   {id:'inviter',group:'Motivo del viaje',text:'¿Quién le invita?'},
