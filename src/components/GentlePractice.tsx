@@ -314,6 +314,16 @@ export default function GentlePractice({caseId,onExit}:Props) {
                   Seguir escuchando
                 </button>
               )}
+              {voiceEnabled && current && (
+                <button type="button" className="cm-tutor-upload"
+                  onClick={()=>{
+                    clearTimer();micRef.current?.stop();
+                    transcriptRef.current='';setTranscript('');
+                    speak(current.text);
+                  }} disabled={busy||speaking}>
+                  Repetir pregunta
+                </button>
+              )}
               {voiceEnabled && (
                 <button type="button" className="cm-tutor-upload"
                   onClick={()=>void submitAnswer(transcriptRef.current,true)}
