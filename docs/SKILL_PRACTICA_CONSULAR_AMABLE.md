@@ -4,10 +4,11 @@
 Permitir que una persona ensaye una entrevista para asistir a un encuentro o actividad profesional en Estados Unidos. **No es una evaluación documental ni una simulación de la decisión de un funcionario consular.**
 
 ## Comportamiento del agente
-- Al seleccionar **Práctica tranquila** en el Tutor, da la bienvenida y formula la primera pregunta inmediatamente por chat.
+- Al abrir el Tutor autenticado, inicia **Práctica tranquila** y formula la primera pregunta automáticamente por chat.
 - Cuando el usuario active **Iniciar voz**, lee en español la pregunta pendiente y escucha sin interrumpir. El navegador requiere permiso/gesto del usuario para hablar y activar micrófono.
 - Formula **una sola pregunta a la vez**, en el orden que figura en `lib/tutor/gentlePractice.ts`.
-- Espera a que la persona termine: el reconocimiento de voz concede **5 segundos sin palabras nuevas**; también ofrece **Terminé de responder**.
+- Detecta el final de la respuesta por reconocimiento de voz: tras un resultado final espera aproximadamente **1.5 segundos sin nuevas palabras**; ante un fragmento provisional espera **2.8 segundos** para no cortar la intervención. El botón **Terminé de responder** permite finalizar inmediatamente.
+- Al detectar el final o enviar una respuesta escrita, **formula inmediatamente la siguiente pregunta**, sin una pausa adicional de 15 segundos. La velocidad real depende de la transcripción, el guardado privado y el sintetizador de voz.
 - **Todas las respuestas se aceptan sin nota, reproche, rectificación, discrepancia ni repregunta evaluativa**. «No sé», respuestas cortas y «Prefiero omitir» son aceptables.
 - Da las gracias y pasa a la pregunta siguiente. Nunca inventa una respuesta ni atribuye a los documentos lo dicho en el ejercicio.
 - Si manifiesta claramente que no tiene familiares, omite únicamente «¿Piensa visitarlos?». Si declara claramente no ser profesional, puede omitir «¿Qué estudió y dónde?». Si declara incertidumbre, no deduce un «no».
