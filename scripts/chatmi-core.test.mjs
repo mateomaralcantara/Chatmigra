@@ -797,7 +797,7 @@ test('Práctica Consular Amable contains exactly the 18 requested questions, ind
   assert.equal(new Set(api.GENTLE_QUESTIONS.map(q=>q.id)).size,18);
   assert.equal(api.GENTLE_QUESTIONS[0].text,'¿A qué va a Estados Unidos?');
   assert.equal(api.GENTLE_QUESTIONS[17].text,'¿Cuál es su contacto en Estados Unidos?');
-  assert.match(ui,/5000/);
+  assert.match(ui,/silenceMs=finalTranscript\?1500:2800/);
   assert.match(ui,/Terminé de responder/);
   assert.match(ui,/Pausar práctica/);
   assert.match(ui,/applicant_case_messages/);
@@ -889,35 +889,31 @@ test('A silent applicant is never submitted as an empty answer and voice can kee
   assert.match(voice,/if\(!text \|\| !state\.started/);
   assert.match(voice,/if\(transcriptRef\.current\)return/);
   assert.match(voice,/if\(emptyRestarts\+\+ < 3\)/);
-  assert.match(voice,/setTimeout\(\(\)=>void submitAnswer\(transcriptRef\.current,true\),5000\)/);
+  assert.match(voice,/setTimeout\(\(\)=>void submitAnswer\(transcriptRef\.current,true\),silenceMs\)/);
   assert.match(voice,/Terminé de responder/);
 });
 
 
-test('Práctica Consular Amable waits at least 15 seconds after each saved answer', () => {
-  const source=read('lib/tutor/gentlePractice.ts');
-  const code=ts.transpileModule(source,{
-    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
-  }).outputText;
-  const sandbox={exports:{}};
-  vm.runInNewContext(code,sandbox);
-  const {GENTLE_QUESTION_PAUSE_MS,remainingGentleQuestionPause}=sandbox.exports;
-  assert.equal(GENTLE_QUESTION_PAUSE_MS,15000);
-  const started=Date.parse('2026-10-27T06:30:00.000Z');
-  const history=[{role:'user',content:'Voy al encuentro',created_at:new Date(started).toISOString()}];
-  assert.equal(remainingGentleQuestionPause(history,started),15000);
-  assert.equal(remainingGentleQuestionPause(history,started+5000),10000);
-  assert.equal(remainingGentleQuestionPause(history,started+14999),1);
-  assert.equal(remainingGentleQuestionPause(history,started+15000),0);
-  assert.equal(remainingGentleQuestionPause(history,started+17000),0);
-  assert.equal(remainingGentleQuestionPause([],started),15000);
+test('Práctica amable proceeds directly after accepted response without fixed 15-second delay', () => {
   const ui=read('src/components/GentlePractice.tsx');
-  const submission=ui.slice(ui.indexOf('const submitAnswer='),ui.indexOf('const begin='));
-  assert.match(submission,/role:'user',content:text.slice\(0,12000\)/);
-  assert.doesNotMatch(submission,/role:'model',content:prompt/);
-  assert.match(ui,/setTimeout\(\(\)=>\{/);
-  assert.match(ui,/remainingGentleQuestionPause\(messages,Date\.now\(\)\)/);
-  assert.match(ui,/void save\(\[\{role:'model',content:prompt\}\]\)/);
-  assert.match(ui,/progress\.paused/);
-  assert.match(ui,/setWaitingSeconds\(Math\.ceil\(ms\/1000\)\)/);
+  const engine=read('lib/tutor/gentlePractice.ts');
+  const send=ui.slice(ui.indexOf('const submitAnswer='),ui.indexOf('const begin='));
+  assert.match(send,/const prompt=next<GENTLE_QUESTIONS\.length\?GENTLE_QUESTIONS\[next\]\.text:GENTLE_FINISHED/);
+  assert.match(send,/await save\(\[/);
+  assert.match(send,/\{role:'user',content:text\.slice\(0,12000\)\}/);
+  assert.match(send,/\{role:'model',content:prompt\}/);
+  assert.match(send,/else if\(spoken && voiceRef\.current\)\{\s*speak\(prompt\)/);
+  assert.doesNotMatch(ui,/remainingGentleQuestionPause|waitingSeconds|advanceFailed|GENTLE_QUESTION_PAUSE_MS/);
+  assert.doesNotMatch(engine,/GENTLE_QUESTION_PAUSE_MS|remainingGentleQuestionPause/);
+  assert.match(ui,/Terminé de responder/);
+});
+
+test('Browser voice endpointing uses brief final-result silence and longer interim silence', () => {
+  const ui=read('src/components/GentlePractice.tsx');
+  assert.match(ui,/const finalTranscript=last\?\.isFinal===true/);
+  assert.match(ui,/const silenceMs=finalTranscript\?1500:2800/);
+  assert.match(ui,/setTimeout\(\(\)=>void submitAnswer\(transcriptRef\.current,true\),silenceMs\)/);
+  assert.match(ui,/if\(transcriptRef\.current\)return/);
+  assert.match(ui,/submittingRef\.current/);
+  assert.match(ui,/stopVoice\(\)/);
 });
