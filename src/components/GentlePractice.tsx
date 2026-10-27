@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { supabase } from '../services/supabaseClient';
 import {
   GENTLE_FINISHED, GENTLE_PAUSED, GENTLE_QUESTIONS, GENTLE_RESUMED, GENTLE_WELCOME,
+  GENTLE_QUESTION_PAUSE_MS, remainingGentleQuestionPause,
   nextGentleIndex, resumeGentlePractice,
   type GentleMessage, type GentleProgress,
 } from '../../lib/tutor/gentlePractice';
@@ -39,6 +40,7 @@ export default function GentlePractice({caseId,onExit}:Props) {
   const [voiceEnabled,setVoiceEnabled]=useState(false);
   const [listening,setListening]=useState(false);
   const [speaking,setSpeaking]=useState(false);
+  const [waitingSeconds,setWaitingSeconds]=useState<number|null>(null);
   const recordsRef=useRef<Message[]>([]);
   const progressRef=useRef<GentleProgress>(FIRST);
   const micRef=useRef<Recognition|null>(null);
@@ -60,14 +62,16 @@ export default function GentlePractice({caseId,onExit}:Props) {
   const save=async (turns:GentleMessage[])=>{
     const {data:{user},error:authError}=await supabase.auth.getUser();
     if(authError || !user)throw new Error('Inicia sesión para guardar tu práctica privada.');
-    const {error:saveError}=await supabase.from('applicant_case_messages').insert(
-      turns.map((item,i)=>({
-        case_id:caseId,created_by:user.id,role:item.role,
-        content:item.content,created_at:new Date(Date.now()+i).toISOString(),
-      })),
-    );
+    const savedAt=Date.now();
+    const rows=turns.map((item,i)=>({
+      case_id:caseId,created_by:user.id,role:item.role,
+      content:item.content,created_at:new Date(savedAt+i).toISOString(),
+    }));
+    const {error:saveError}=await supabase.from('applicant_case_messages').insert(rows);
     if(saveError)throw new Error('No se pudo guardar tu práctica. Inténtalo nuevamente.');
-    update([...recordsRef.current,...turns]);
+    // Conservar en pantalla la misma fecha usada en Supabase, también para el
+    // temporizador: recargar no debe adelantar la pregunta siguiente.
+    update([...recordsRef.current,...rows]);
   };
 
   const clearTimer=()=>{
@@ -114,16 +118,18 @@ export default function GentlePractice({caseId,onExit}:Props) {
     const next=nextGentleIndex(state.index,text);
     const prompt=next<GENTLE_QUESTIONS.length?GENTLE_QUESTIONS[next].text:GENTLE_FINISHED;
     try{
+      // La respuesta se guarda primero. El siguiente enunciado NO se muestra
+      // ni se pronuncia hasta que hayan pasado al menos 15 segundos.
       await save([
         {role:'user',content:text.slice(0,12000)},
         {role:'model',content:'Gracias.'},
-        {role:'model',content:prompt},
+        ...(next===GENTLE_QUESTIONS.length
+          ? [{role:'model' as const,content:GENTLE_FINISHED}]
+          : []),
       ]);
       setAnswer('');setTranscript('');transcriptRef.current='';
       if(next===GENTLE_QUESTIONS.length){
         stopVoice();setNotice('Práctica finalizada. Puedes repetirla cuando quieras.');
-      } else if(spoken && voiceRef.current){
-        speak(prompt);
       }
     }catch(err){
       setError(err instanceof Error?err.message:'No se pudo guardar la respuesta.');
@@ -147,9 +153,12 @@ export default function GentlePractice({caseId,onExit}:Props) {
         ]);
       }else if(current.paused){
         await save([{role:'model',content:GENTLE_RESUMED}]);
-      }else if(!current.awaiting && current.index<GENTLE_QUESTIONS.length){
+      }else if(!current.awaiting && current.index<GENTLE_QUESTIONS.length &&
+        current.answered===0){
+        // Primera pregunta sin respuesta: iniciar enseguida.
         await save([{role:'model',content:GENTLE_QUESTIONS[current.index].text}]);
       }
+      // Si ya existe una respuesta, el temporizador controla el siguiente turno.
     }catch(err){setError(err instanceof Error?err.message:'No se pudo iniciar la práctica.');}
     finally{busyRef.current=false;if(aliveRef.current)setBusy(false);}
   };
@@ -163,8 +172,8 @@ export default function GentlePractice({caseId,onExit}:Props) {
   };
 
   const startVoice=()=>{
-    if(busyRef.current || !progressRef.current.awaiting || progressRef.current.paused)return;
     if(voiceRef.current){stopVoice();return;}
+    if(busyRef.current || !progressRef.current.awaiting || progressRef.current.paused)return;
     const Constructor=recognitionClass();
     if(!Constructor){setError('Este navegador no admite reconocimiento de voz. Usa Chrome o responde por chat.');return;}
     const mic=new Constructor();
@@ -251,6 +260,47 @@ export default function GentlePractice({caseId,onExit}:Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[caseId]);
 
+  // Programar una sola pregunta por turno, no antes de que hayan pasado
+  // 15 segundos desde la respuesta, aun después de una recarga o pausa.
+  useEffect(()=>{
+    if(!progress.started || progress.completed || progress.paused ||
+      progress.awaiting || busy || progress.index>=GENTLE_QUESTIONS.length){
+      setWaitingSeconds(null);
+      return;
+    }
+    const prompt=GENTLE_QUESTIONS[progress.index].text;
+    const refreshCountdown=()=>{
+      const ms=remainingGentleQuestionPause(messages,Date.now());
+      setWaitingSeconds(Math.ceil(ms/1000));
+    };
+    refreshCountdown();
+    const countdown=setInterval(refreshCountdown,500);
+    const remaining=remainingGentleQuestionPause(messages,Date.now());
+    const release=setTimeout(()=>{
+      const state=progressRef.current;
+      if(!aliveRef.current || busyRef.current || !state.started || state.completed ||
+        state.paused || state.awaiting || state.index!==progress.index)return;
+      // Nunca permitir que una espera ya consumida se publique dos veces.
+      busyRef.current=true;
+      setBusy(true);
+      void save([{role:'model',content:prompt}])
+        .then(()=>{
+          setWaitingSeconds(null);
+          if(voiceRef.current)speak(prompt);
+        })
+        .catch(err=>setError(err instanceof Error
+          ? err.message : 'No se pudo continuar la práctica.'))
+        .finally(()=>{
+          busyRef.current=false;
+          if(aliveRef.current)setBusy(false);
+        });
+    },remaining);
+    return ()=>{clearInterval(countdown);clearTimeout(release);};
+    // El estado guardado, y no una petición a Gemini, decide cuándo continuar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[messages,progress.started,progress.completed,progress.paused,progress.awaiting,
+     progress.index,busy]);
+
   useEffect(()=>{endRef.current?.scrollIntoView({block:'end',behavior:'smooth'});},[messages]);
 
   const exitPractice=async()=>{
@@ -317,6 +367,11 @@ export default function GentlePractice({caseId,onExit}:Props) {
         {error&&<p role="alert" className="cm-inline-error">{error}</p>}
         {notice&&<p role="status" className="cm-tutor-chat-notice">{notice}</p>}
         {busy&&<p role="status" className="cm-tutor-chat-thinking">Guardando práctica...</p>}
+        {waitingSeconds!==null && !progress.awaiting && !progress.paused && !progress.completed && (
+          <p role="status" className="cm-tutor-chat-notice">
+            Gracias por responder. La próxima pregunta llegará en {waitingSeconds} segundos.
+          </p>
+        )}
         {progress.started&&!progress.completed&&!progress.paused&&progress.awaiting&&(
           <>
             <div className="cm-tutor-documents-bar">
