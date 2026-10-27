@@ -570,7 +570,7 @@ test('guided Tutor starts the interview and automatically asks every next questi
   // Legacy intake questions remain parseable only for historical compatibility.
   // They MUST NOT orchestrate new consular interview sessions.
   const tutor=read('src/components/ApplicantTutorChat.tsx');
-  assert.match(tutor, /const progress=resumeConsularInterview\(history,payload\.questions\)/);
+  assert.match(tutor, /const progress=resumeConsularInterview\(documentHistory,payload\.questions\)/);
   assert.match(tutor, /const grade=evaluateConsularAnswer/);
   assert.match(tutor, /readAnswerAloud\(active\.questions\[active\.index\]\.question,caseId\)/);
   assert.match(tutor, /naturalSpanishSpeech\(answer\)/);
@@ -689,11 +689,15 @@ test('Tutor opens consular interview automatically and resumes without legacy pr
   const autoStart=ui.slice(ui.indexOf('const refreshCase ='),ui.indexOf('useEffect(() => {\n    const openVoice'));
   assert.match(autoStart,/startingSimulatorCasesRef\.current\.add\(id\)/);
   assert.match(autoStart,/fetch\('\/api\/applicant-simulator'/);
-  assert.match(autoStart,/resumeConsularInterview\(history,payload\.questions\)/);
+  assert.match(autoStart,/resumeConsularInterview\(documentHistory,payload\.questions\)/);
+  assert.match(autoStart,/const documentHistory = history\.filter\(message =>/);
+  assert.match(autoStart,/message\.content === GENTLE_WELCOME/);
+  assert.match(autoStart,/message\.content === GENTLE_PAUSED/);
+  assert.match(autoStart,/if\(gentleOpenRef\.current\) return/);
   assert.match(autoStart,/if\(progress\.pending\)/);
   assert.match(autoStart,/if\(!readyJobs\?\.length\)/);
   assert.match(autoStart,/setMessages\(\[\.\.\.activeHistory,\{role:'model',content:prompt\}\]\)/);
-  assert.match(autoStart,/firstConsular<0 \? history : history\.slice\(0,firstConsular\)/);
+  assert.match(autoStart,/firstConsular<0 \? documentHistory : documentHistory\.slice\(0,firstConsular\)/);
   assert.match(ui,/if\(startingSimulatorCasesRef\.current\.has\(caseId\)\)/);
   assert.doesNotMatch(autoStart,/interviewProgress/);
   assert.doesNotMatch(autoStart,/state\.nextQuestion/);
@@ -706,7 +710,7 @@ test('document-backed interview starts only when prepared; voice cannot silently
   const ui=read('src/components/ApplicantTutorChat.tsx');
   assert.match(ui,/previousMessages\.length>0/);
   assert.match(ui,/Historial anterior/);
-  assert.match(ui,/setPreviousMessages\(firstConsular<0 \? history : history\.slice\(0,firstConsular\)\)/);
+  assert.match(ui,/setPreviousMessages\(firstConsular<0 \? documentHistory : documentHistory\.slice\(0,firstConsular\)\)/);
   assert.match(ui,/setMessages\(activeHistory\)/);
   assert.match(ui,/response\.status===409/);
   assert.match(ui,/la preparación puede consumir tu cuota de Gemini/);
