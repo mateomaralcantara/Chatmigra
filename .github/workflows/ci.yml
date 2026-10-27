@@ -38,5 +38,8 @@ jobs:
       - name: TypeScript
         run: npm run typecheck
 
+      - name: Regression tests
+        run: npm test
+
       - name: Production build
         run: npm run build
