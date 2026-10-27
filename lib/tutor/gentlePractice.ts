@@ -37,8 +37,11 @@ export const GENTLE_QUESTIONS: readonly GentleQuestion[] = [
 ];
 
 function clearNo(answer:string):boolean {
-  return /^(?:no(?:\b|[,.])|ningun[oa]?\b|negativo\b|para nada\b)/i
-    .test(answer.trim().normalize('NFD').replace(/[\u0300-\u036f]/g,''));
+  const value=answer.trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  // "No sé" and "no recuerdo" are unknown answers, not a statement that
+  // relatives or professional studies do not exist.
+  if(/^(?:no se|no recuerdo|no estoy segur[oa]|no tengo idea|no lo se)\b/.test(value))return false;
+  return /^(?:no(?:\b|[,.])|ningun[oa]?\b|negativo\b|para nada\b)/.test(value);
 }
 
 export function nextGentleIndex(index:number,answer:string):number {
