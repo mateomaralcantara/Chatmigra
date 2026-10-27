@@ -168,12 +168,14 @@ export default function GentlePractice({caseId,onExit}:Props) {
     const Constructor=recognitionClass();
     if(!Constructor){setError('Este navegador no admite reconocimiento de voz. Usa Chrome o responde por chat.');return;}
     const mic=new Constructor();
+    let emptyRestarts=0;
     mic.lang='es-DO';mic.continuous=true;mic.interimResults=true;
     mic.onresult=(event)=>{
       if(!voiceRef.current || submittingRef.current)return;
       const current=Array.from(event.results).map(result=>result[0]?.transcript||'').join(' ')
         .replace(/\s+/g,' ').trim();
       transcriptRef.current=current;setTranscript(current);clearTimer();
+      if(current)emptyRestarts=0;
       // Pausa generosa: solo finaliza tras 5 segundos sin nuevas palabras.
       // El usuario puede pulsar «Terminé de responder» antes.
       if(current)timerRef.current=setTimeout(()=>void submitAnswer(transcriptRef.current,true),5000);
@@ -182,7 +184,17 @@ export default function GentlePractice({caseId,onExit}:Props) {
       setListening(false);
       if(!voiceRef.current || submittingRef.current)return;
       if(transcriptRef.current)return; // No avanzar por silencio
-      setNotice('Te escucho cuando estés listo. Pulsa «Seguir escuchando» si el micrófono se detuvo.');
+      setNotice('No hay prisa. Puedes responder cuando estés listo.');
+      // Chrome puede finalizar una escucha por silencio, aunque el usuario aún
+      // esté pensando. Reanudar un número acotado de veces, sin enviar respuesta.
+      if(emptyRestarts++ < 3){
+        timerRef.current=setTimeout(()=>{
+          timerRef.current=null;
+          if(voiceRef.current && !submittingRef.current && !transcriptRef.current)listen();
+        },1000);
+      }else{
+        setNotice('Te sigo esperando. Pulsa «Seguir escuchando» cuando estés listo.');
+      }
     };
     mic.onerror=(event)=>{
       if(!voiceRef.current)return;
@@ -221,8 +233,12 @@ export default function GentlePractice({caseId,onExit}:Props) {
         setBusy(false);busyRef.current=false;
         if(start<0){await begin();return;}
         const recovered=progressRef.current;
-        if(recovered.started && !recovered.completed && !recovered.paused && !recovered.awaiting){
-          await begin(); // Recover an interrupted write without duplicating an answered question
+        if(recovered.completed){
+          await begin(true); // Nueva visita: primera pregunta de una nueva práctica.
+          return;
+        }
+        if(recovered.paused || !recovered.awaiting){
+          await begin(); // Reanudar sin obligar al solicitante a pulsar botones.
         }
       }catch(err){
         if(!cancelled){setError(err instanceof Error?err.message:'Error cargando la práctica.');setBusy(false);}
