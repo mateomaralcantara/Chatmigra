@@ -110,6 +110,7 @@ export default function GentlePractice({caseId,onExit}:Props) {
     if(!text || !state.started || state.completed || state.paused || !state.awaiting || busyRef.current)return;
     busyRef.current=true;submittingRef.current=true;setBusy(true);setError('');clearTimer();
     if(spoken){micRef.current?.stop();setListening(false);}
+    else if(voiceRef.current){stopVoice();}
     const next=nextGentleIndex(state.index,text);
     const prompt=next<GENTLE_QUESTIONS.length?GENTLE_QUESTIONS[next].text:GENTLE_FINISHED;
     try{
@@ -236,6 +237,22 @@ export default function GentlePractice({caseId,onExit}:Props) {
 
   useEffect(()=>{endRef.current?.scrollIntoView({block:'end',behavior:'smooth'});},[messages]);
 
+  const exitPractice=async()=>{
+    if(busyRef.current)return;
+    stopVoice();
+    const state=progressRef.current;
+    if(state.started && !state.completed && !state.paused){
+      busyRef.current=true;setBusy(true);
+      try{await save([{role:'model',content:GENTLE_PAUSED}]);}
+      catch(err){
+        setError(err instanceof Error?err.message:'No se pudo guardar la pausa.');
+        busyRef.current=false;setBusy(false);return;
+      }
+      busyRef.current=false;setBusy(false);
+    }
+    onExit();
+  };
+
   const send=(event:FormEvent)=>{
     event.preventDefault();
     void submitAnswer(answer,false);
@@ -249,7 +266,7 @@ export default function GentlePractice({caseId,onExit}:Props) {
           <h2>Práctica Consular Amable</h2>
           <p>18 preguntas · sin calificaciones ni reproches · sin necesidad de documentos</p>
         </div>
-        <button type="button" className="cm-tutor-new-case" onClick={()=>{stopVoice();onExit();}}>
+        <button type="button" className="cm-tutor-new-case" disabled={busy} onClick={()=>void exitPractice()}>
           Volver al Tutor
         </button>
       </header>
