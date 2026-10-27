@@ -3,6 +3,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { supabase } from '../services/supabaseClient';
 import { naturalSpanishSpeech } from '../../lib/tutor/interview';
+import GentlePractice from './GentlePractice';
+import { GENTLE_FINISHED, GENTLE_PAUSED, GENTLE_RESUMED, GENTLE_WELCOME } from '../../lib/tutor/gentlePractice';
 import { CONSULAR_SKILLS, evaluateConsularAnswer, resumeConsularInterview, CONSULAR_FINISHED, type PreparedQuestion } from '../../lib/tutor/consularSkills';
 
 type CaseRow = { id: string; applicant_name: string; owner_id: string; nationality: string; destination: string; visa_type: string };
@@ -90,6 +92,8 @@ export default function ApplicantTutorChat() {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [previousMessages, setPreviousMessages] = useState<MessageRow[]>([]);
   const [question, setQuestion] = useState('');
+  const [gentleOpen, setGentleOpen] = useState(false);
+  const gentleOpenRef = useRef(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
@@ -173,20 +177,39 @@ export default function ApplicantTutorChat() {
       return (existing.length ? existing : fileRows.slice(0, 4).map(f => f.id)).slice(0, 4);
     });
     const history = ((conversation.data || []) as MessageRow[]).reverse();
+    // Keep practice answers isolated: they are neither documentary facts nor
+    // responses to the document-grounded consular simulator.
+    let inGentlePractice = false;
+    const documentHistory = history.filter(message => {
+      if (message.role === 'model' &&
+        (message.content === GENTLE_WELCOME || message.content === GENTLE_RESUMED)) {
+        inGentlePractice = true;
+        return false;
+      }
+      if (inGentlePractice) {
+        if (message.role === 'model' &&
+          (message.content === GENTLE_FINISHED || message.content === GENTLE_PAUSED)) {
+          inGentlePractice = false;
+        }
+        return false;
+      }
+      return true;
+    });
     // Keep older chat/legacy intake available for inspection but outside the
     // active consular conversation. It must never be mistaken for this agent's
     // question or be used to grade the applicant's next answer.
-    const firstConsular = history.findIndex(message =>
+    const firstConsular = documentHistory.findIndex(message =>
       message.role==='model' && (
         message.content===CONSULAR_SKILLS[0].question ||
         message.content==='¿Cuál es tu nombre completo, tal como figura en la solicitud?'
       ));
-    const activeHistory = firstConsular<0 ? [] : history.slice(firstConsular);
-    setPreviousMessages(firstConsular<0 ? history : history.slice(0,firstConsular));
+    const activeHistory = firstConsular<0 ? [] : documentHistory.slice(firstConsular);
+    setPreviousMessages(firstConsular<0 ? documentHistory : documentHistory.slice(0,firstConsular));
     setMessages(activeHistory);
     setOlderAvailable(history.length === 100);
     // The consular simulator, grounded in this applicant's indexed documents,
     // takes priority over every legacy generic intake prompt.
+    if(gentleOpenRef.current) return;
     if(!fileRows.length) {
       setNotice('Sube el DS-160 y los documentos de respaldo para iniciar una entrevista consular dirigida.');
       return;
@@ -222,7 +245,7 @@ export default function ApplicantTutorChat() {
         throw new Error(payload.error || 'No se pudieron preparar preguntas documentales.');
       }
       if(!mountedRef.current || activeCaseRef.current!==id) return;
-      const progress=resumeConsularInterview(history,payload.questions);
+      const progress=resumeConsularInterview(documentHistory,payload.questions);
       if(progress.completed){
         setNotice('Este simulacro ya terminó. Pulsa «Iniciar simulacro» para practicar nuevamente.');
         return;
@@ -283,6 +306,7 @@ export default function ApplicantTutorChat() {
     activeCaseRef.current = caseId;
     setError(''); setNotice(''); setTranscript('');
     simulatorRef.current = null; setSimulator(null);
+    gentleOpenRef.current = false; setGentleOpen(false);
     setDocs([]); setFacts([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setPreviousMessages([]); setOlderAvailable(false);
     voiceOnRef.current = false; setVoiceOn(false);
     voiceSessionRef.current = '';
@@ -887,6 +911,12 @@ export default function ApplicantTutorChat() {
     });
   };
 
+  if(gentleOpen) return <GentlePractice caseId={caseId} onExit={() => {
+    gentleOpenRef.current=false;
+    setGentleOpen(false);
+    void refreshCase(caseId);
+  }}/>;
+
   return (
     <section className="cm-tutor-chat-layout" aria-label="Tutor Personal — Chat y Voz">
       <header className="cm-tutor-chat-header">
@@ -897,6 +927,12 @@ export default function ApplicantTutorChat() {
             {cases.map(item => <option key={item.id} value={item.id}>{item.applicant_name}</option>)}
           </select>
           <button type="button" className="cm-tutor-new-case" onClick={() => void createCase()} disabled={loading} title="Crear expediente privado">+ Nuevo</button>
+          <button type="button" className="cm-tutor-new-case" disabled={!caseId}
+            onClick={() => {
+              stopVoice();
+              simulatorRef.current=null;setSimulator(null);
+              gentleOpenRef.current=true;setGentleOpen(true);
+            }}>Práctica tranquila</button>
         </div>
         <div className="cm-tutor-modes" role="tablist" aria-label="Modalidad del Tutor">
           <button role="tab" type="button" aria-selected={mode === 'chat'} className={mode === 'chat' ? 'is-active' : ''} onClick={() => switchMode('chat')}>Chat</button>
@@ -908,7 +944,7 @@ export default function ApplicantTutorChat() {
         {!messages.length && (
           <div className="cm-tutor-chat-welcome">
             <h1>{caseId ? 'Simulacro consular dirigido por tu Tutor' : 'Tutor Migratorio Personal'}</h1>
-            <p>{caseId ? 'El agente comenzará por tu identidad y continuará con las preguntas del DS-160 y sus documentos. Si falta indexarlos, pulsa «Preparar búsqueda rápida».' : 'Crea un expediente para comenzar.'}</p>
+            <p>{caseId ? 'Elige «Práctica tranquila» para ensayar sin correcciones ni documentos, o usa el simulacro basado en tu expediente.' : 'Crea un expediente para comenzar la práctica tranquila, sin subir documentos.'}</p>
           </div>
         )}
         <div className="cm-tutor-chat-messages">
