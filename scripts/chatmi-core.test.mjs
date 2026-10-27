@@ -867,3 +867,26 @@ test('Práctica Amable preserves an unanswered question across pauses and reload
   assert.equal(state.awaiting,true);
   assert.equal(state.paused,false);
 });
+
+
+test('Tutor enters the kind consular interview automatically for an authenticated applicant', () => {
+  const parent=read('src/components/ApplicantTutorChat.tsx');
+  const practice=read('src/components/GentlePractice.tsx');
+  assert.match(parent,/const \[gentleOpen, setGentleOpen\] = useState\(\(\) => Boolean\(currentCaseId\(\)\)\)/);
+  assert.match(parent,/gentleOpenRef\.current = Boolean\(caseId\); setGentleOpen\(Boolean\(caseId\)\)/);
+  assert.match(parent,/applicant_name:'Práctica consular'/);
+  assert.match(parent,/if\(gentleOpenRef\.current\) return/);
+  assert.match(practice,/if\(start<0\)\{await begin\(\);return;\}/);
+  assert.match(practice,/if\(recovered\.paused \|\| !recovered\.awaiting\)/);
+  assert.match(practice,/if\(recovered\.completed\)/);
+  assert.doesNotMatch(practice,/evaluateConsularAnswer/);
+});
+
+test('A silent applicant is never submitted as an empty answer and voice can keep listening', () => {
+  const voice=read('src/components/GentlePractice.tsx');
+  assert.match(voice,/if\(!text \|\| !state\.started/);
+  assert.match(voice,/if\(transcriptRef\.current\)return/);
+  assert.match(voice,/if\(emptyRestarts\+\+ < 3\)/);
+  assert.match(voice,/setTimeout\(\(\)=>void submitAnswer\(transcriptRef\.current,true\),5000\)/);
+  assert.match(voice,/Terminé de responder/);
+});
