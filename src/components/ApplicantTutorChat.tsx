@@ -121,6 +121,9 @@ export default function ApplicantTutorChat() {
   const caseProfilesRef = useRef<CaseRow[]>([]);
   const loggedUserRef = useRef('');
   const mountedRef = useRef(true);
+  // React.StrictMode carga el componente dos veces en desarrollo. Evitar
+  // que ambas cargas creen dos expedientes nuevos para un mismo solicitante.
+  const initialCaseRequestRef = useRef<Promise<CaseRow> | null>(null);
 
   useEffect(() => { messagesRef.current = messages; endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages]);
 
@@ -135,11 +138,24 @@ export default function ApplicantTutorChat() {
     // Un solicitante nuevo empieza a practicar sin crear manualmente un expediente
     // ni subir un DS-160. Cada expediente pertenece al usuario autenticado (RLS).
     if (!rows.length) {
-      const { data: created, error: createError } = await supabase.from('applicant_cases')
-        .insert({owner_id:signedIn.id, applicant_name:'Práctica consular'})
-        .select('id,applicant_name,owner_id,nationality,destination,visa_type').single();
-      if (createError || !created) throw new Error('No se pudo preparar tu práctica privada. Comprueba las tablas del Tutor en Supabase.');
-      rows = [created as CaseRow];
+      if (!initialCaseRequestRef.current) {
+        initialCaseRequestRef.current = (async (): Promise<CaseRow> => {
+          // Comprobar de nuevo antes de crear, para no duplicar una práctica
+          // si otra solicitud ya completó la inserción.
+          const {data:existing,error:readError} = await supabase.from('applicant_cases')
+            .select('id,applicant_name,owner_id,nationality,destination,visa_type')
+            .order('created_at',{ascending:false}).limit(1);
+          if (readError) throw new Error('No se pudo revisar el expediente privado.');
+          if (existing?.length) return existing[0] as CaseRow;
+          const { data: created, error: createError } = await supabase.from('applicant_cases')
+            .insert({owner_id:signedIn.id, applicant_name:'Práctica consular'})
+            .select('id,applicant_name,owner_id,nationality,destination,visa_type').single();
+          if (createError || !created) throw new Error('No se pudo preparar tu práctica privada. Comprueba las tablas del Tutor en Supabase.');
+          return created as CaseRow;
+        })();
+      }
+      try { rows = [await initialCaseRequestRef.current]; }
+      catch(error){initialCaseRequestRef.current = null;throw error;}
     }
     if (!mountedRef.current) return;
     caseProfilesRef.current = rows;
