@@ -570,7 +570,7 @@ test('guided Tutor starts the interview and automatically asks every next questi
   // Legacy intake questions remain parseable only for historical compatibility.
   // They MUST NOT orchestrate new consular interview sessions.
   const tutor=read('src/components/ApplicantTutorChat.tsx');
-  assert.match(tutor, /const progress=resumeConsularInterview\(history,payload\.questions\)/);
+  assert.match(tutor, /const progress=resumeConsularInterview\(documentHistory,payload\.questions\)/);
   assert.match(tutor, /const grade=evaluateConsularAnswer/);
   assert.match(tutor, /readAnswerAloud\(active\.questions\[active\.index\]\.question,caseId\)/);
   assert.match(tutor, /naturalSpanishSpeech\(answer\)/);
@@ -689,11 +689,15 @@ test('Tutor opens consular interview automatically and resumes without legacy pr
   const autoStart=ui.slice(ui.indexOf('const refreshCase ='),ui.indexOf('useEffect(() => {\n    const openVoice'));
   assert.match(autoStart,/startingSimulatorCasesRef\.current\.add\(id\)/);
   assert.match(autoStart,/fetch\('\/api\/applicant-simulator'/);
-  assert.match(autoStart,/resumeConsularInterview\(history,payload\.questions\)/);
+  assert.match(autoStart,/resumeConsularInterview\(documentHistory,payload\.questions\)/);
+  assert.match(autoStart,/const documentHistory = history\.filter\(message =>/);
+  assert.match(autoStart,/message\.content === GENTLE_WELCOME/);
+  assert.match(autoStart,/message\.content === GENTLE_PAUSED/);
+  assert.match(autoStart,/if\(gentleOpenRef\.current\) return/);
   assert.match(autoStart,/if\(progress\.pending\)/);
   assert.match(autoStart,/if\(!readyJobs\?\.length\)/);
   assert.match(autoStart,/setMessages\(\[\.\.\.activeHistory,\{role:'model',content:prompt\}\]\)/);
-  assert.match(autoStart,/firstConsular<0 \? history : history\.slice\(0,firstConsular\)/);
+  assert.match(autoStart,/firstConsular<0 \? documentHistory : documentHistory\.slice\(0,firstConsular\)/);
   assert.match(ui,/if\(startingSimulatorCasesRef\.current\.has\(caseId\)\)/);
   assert.doesNotMatch(autoStart,/interviewProgress/);
   assert.doesNotMatch(autoStart,/state\.nextQuestion/);
@@ -706,7 +710,7 @@ test('document-backed interview starts only when prepared; voice cannot silently
   const ui=read('src/components/ApplicantTutorChat.tsx');
   assert.match(ui,/previousMessages\.length>0/);
   assert.match(ui,/Historial anterior/);
-  assert.match(ui,/setPreviousMessages\(firstConsular<0 \? history : history\.slice\(0,firstConsular\)\)/);
+  assert.match(ui,/setPreviousMessages\(firstConsular<0 \? documentHistory : documentHistory\.slice\(0,firstConsular\)\)/);
   assert.match(ui,/setMessages\(activeHistory\)/);
   assert.match(ui,/response\.status===409/);
   assert.match(ui,/la preparación puede consumir tu cuota de Gemini/);
@@ -776,4 +780,140 @@ test('consular Tutor understands conversational summaries instead of requiring w
   assert.equal(grade('passport','RD999000','RD888000','exact',2).outcome,'review');
   assert.equal(grade('invitation','AIPMA','No sé').outcome,'clarify');
   assert.equal(grade('invitation','AIPMA','No sé','document',2).repeat,false);
+});
+
+
+test('Práctica Consular Amable contains exactly the 18 requested questions, independently of Gemini', () => {
+  const source=read('lib/tutor/gentlePractice.ts');
+  const ui=read('src/components/GentlePractice.tsx');
+  const parent=read('src/components/ApplicantTutorChat.tsx');
+  const compiled=ts.transpileModule(source,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
+  }).outputText;
+  const sandbox={exports:{}};
+  vm.runInNewContext(compiled,sandbox);
+  const api=sandbox.exports;
+  assert.equal(api.GENTLE_QUESTIONS.length,18);
+  assert.equal(new Set(api.GENTLE_QUESTIONS.map(q=>q.id)).size,18);
+  assert.equal(api.GENTLE_QUESTIONS[0].text,'¿A qué va a Estados Unidos?');
+  assert.equal(api.GENTLE_QUESTIONS[17].text,'¿Cuál es su contacto en Estados Unidos?');
+  assert.match(ui,/silenceMs=finalTranscript\?1500:2800/);
+  assert.match(ui,/Terminé de responder/);
+  assert.match(ui,/Pausar práctica/);
+  assert.match(ui,/applicant_case_messages/);
+  assert.doesNotMatch(ui,/evaluateConsularAnswer|\/api\/gemini|\/api\/applicant-simulator/);
+  assert.match(parent,/Práctica tranquila/);
+  assert.match(parent,/GENTLE_WELCOME/);
+});
+
+test('Práctica Amable advances without evaluating or reproaching short answers', () => {
+  const source=read('lib/tutor/gentlePractice.ts');
+  const js=ts.transpileModule(source,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
+  }).outputText;
+  const sandbox={exports:{}};
+  vm.runInNewContext(js,sandbox);
+  const {GENTLE_WELCOME,GENTLE_FINISHED,GENTLE_QUESTIONS,nextGentleIndex,resumeGentlePractice}=sandbox.exports;
+  assert.equal(nextGentleIndex(0,'No sé'),1);
+  assert.equal(nextGentleIndex(6,'No tengo familiares'),8);
+  assert.equal(nextGentleIndex(6,'Sí'),7);
+  assert.equal(nextGentleIndex(6,'No sé'),7);
+  assert.equal(nextGentleIndex(14,'No soy profesional'),16);
+  assert.equal(nextGentleIndex(14,'Sí'),15);
+  let history=[
+    {role:'model',content:GENTLE_WELCOME},
+    {role:'model',content:GENTLE_QUESTIONS[0].text},
+  ];
+  let state=resumeGentlePractice(history);
+  assert.equal(state.index,0);
+  assert.equal(state.awaiting,true);
+  for(let index=0;index<GENTLE_QUESTIONS.length;index++){
+    const answer='No sé';
+    history.push({role:'user',content:answer});
+    const next=nextGentleIndex(index,answer);
+    history.push({role:'model',content:'Gracias.'});
+    history.push({role:'model',content:next===18?GENTLE_FINISHED:GENTLE_QUESTIONS[next].text});
+    state=resumeGentlePractice(history);
+    index=next-1;
+  }
+  assert.equal(state.completed,true);
+  assert.equal(state.answered,18); // An uncertain answer must not skip conditional questions
+  assert.equal(state.awaiting,false);
+});
+
+test('Práctica Amable preserves an unanswered question across pauses and reloads', () => {
+  const source=read('lib/tutor/gentlePractice.ts');
+  const js=ts.transpileModule(source,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
+  }).outputText;
+  const sandbox={exports:{}};
+  vm.runInNewContext(js,sandbox);
+  const {GENTLE_WELCOME,GENTLE_PAUSED,GENTLE_RESUMED,GENTLE_QUESTIONS,resumeGentlePractice}=sandbox.exports;
+  const history=[
+    {role:'model',content:GENTLE_WELCOME},
+    {role:'model',content:GENTLE_QUESTIONS[0].text},
+    {role:'user',content:'Voy a un encuentro'},
+    {role:'model',content:'Gracias.'},
+    {role:'model',content:GENTLE_QUESTIONS[1].text},
+    {role:'model',content:GENTLE_PAUSED},
+  ];
+  let state=resumeGentlePractice(history);
+  assert.equal(state.index,1);
+  assert.equal(state.awaiting,true);
+  assert.equal(state.paused,true);
+  history.push({role:'model',content:GENTLE_RESUMED});
+  state=resumeGentlePractice(history);
+  assert.equal(state.index,1);
+  assert.equal(state.awaiting,true);
+  assert.equal(state.paused,false);
+});
+
+
+test('Tutor enters the kind consular interview automatically for an authenticated applicant', () => {
+  const parent=read('src/components/ApplicantTutorChat.tsx');
+  const practice=read('src/components/GentlePractice.tsx');
+  assert.match(parent,/const \[gentleOpen, setGentleOpen\] = useState\(\(\) => Boolean\(currentCaseId\(\)\)\)/);
+  assert.match(parent,/gentleOpenRef\.current = Boolean\(caseId\); setGentleOpen\(Boolean\(caseId\)\)/);
+  assert.match(parent,/applicant_name:'Práctica consular'/);
+  assert.match(parent,/initialCaseRequestRef\.current/);
+  assert.match(parent,/useRef<Promise<CaseRow> \| null>/);
+  assert.match(parent,/if\(gentleOpenRef\.current\) return/);
+  assert.match(practice,/if\(start<0\)\{await begin\(\);return;\}/);
+  assert.match(practice,/if\(recovered\.paused \|\| !recovered\.awaiting\)/);
+  assert.match(practice,/if\(recovered\.completed\)/);
+  assert.doesNotMatch(practice,/evaluateConsularAnswer/);
+});
+
+test('A silent applicant is never submitted as an empty answer and voice can keep listening', () => {
+  const voice=read('src/components/GentlePractice.tsx');
+  assert.match(voice,/if\(!text \|\| !state\.started/);
+  assert.match(voice,/if\(transcriptRef\.current\)return/);
+  assert.match(voice,/if\(emptyRestarts\+\+ < 3\)/);
+  assert.match(voice,/setTimeout\(\(\)=>void submitAnswer\(transcriptRef\.current,true\),silenceMs\)/);
+  assert.match(voice,/Terminé de responder/);
+});
+
+
+test('Práctica amable proceeds directly after accepted response without fixed 15-second delay', () => {
+  const ui=read('src/components/GentlePractice.tsx');
+  const engine=read('lib/tutor/gentlePractice.ts');
+  const send=ui.slice(ui.indexOf('const submitAnswer='),ui.indexOf('const begin='));
+  assert.match(send,/const prompt=next<GENTLE_QUESTIONS\.length\?GENTLE_QUESTIONS\[next\]\.text:GENTLE_FINISHED/);
+  assert.match(send,/await save\(\[/);
+  assert.match(send,/\{role:'user',content:text\.slice\(0,12000\)\}/);
+  assert.match(send,/\{role:'model',content:prompt\}/);
+  assert.match(send,/else if\(spoken && voiceRef\.current\)\{\s*speak\(prompt\)/);
+  assert.doesNotMatch(ui,/remainingGentleQuestionPause|waitingSeconds|advanceFailed|GENTLE_QUESTION_PAUSE_MS/);
+  assert.doesNotMatch(engine,/GENTLE_QUESTION_PAUSE_MS|remainingGentleQuestionPause/);
+  assert.match(ui,/Terminé de responder/);
+});
+
+test('Browser voice endpointing uses brief final-result silence and longer interim silence', () => {
+  const ui=read('src/components/GentlePractice.tsx');
+  assert.match(ui,/const finalTranscript=last\?\.isFinal===true/);
+  assert.match(ui,/const silenceMs=finalTranscript\?1500:2800/);
+  assert.match(ui,/setTimeout\(\(\)=>void submitAnswer\(transcriptRef\.current,true\),silenceMs\)/);
+  assert.match(ui,/if\(transcriptRef\.current\)return/);
+  assert.match(ui,/submittingRef\.current/);
+  assert.match(ui,/stopVoice\(\)/);
 });
