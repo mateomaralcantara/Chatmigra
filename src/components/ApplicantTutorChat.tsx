@@ -92,8 +92,10 @@ export default function ApplicantTutorChat() {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [previousMessages, setPreviousMessages] = useState<MessageRow[]>([]);
   const [question, setQuestion] = useState('');
-  const [gentleOpen, setGentleOpen] = useState(false);
-  const gentleOpenRef = useRef(false);
+  // La práctica guiada es la pantalla de entrada del Tutor.
+  // El simulacro documental sigue disponible desde «Volver al Tutor».
+  const [gentleOpen, setGentleOpen] = useState(() => Boolean(currentCaseId()));
+  const gentleOpenRef = useRef(Boolean(currentCaseId()));
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
@@ -129,7 +131,16 @@ export default function ApplicantTutorChat() {
     const { data, error: queryError } = await supabase.from('applicant_cases')
       .select('id,applicant_name,owner_id,nationality,destination,visa_type').order('created_at', { ascending: false });
     if (queryError) throw new Error('No se pudieron cargar tus expedientes. Revisa la instalación de Supabase.');
-    const rows = (data || []) as CaseRow[];
+    let rows = (data || []) as CaseRow[];
+    // Un solicitante nuevo empieza a practicar sin crear manualmente un expediente
+    // ni subir un DS-160. Cada expediente pertenece al usuario autenticado (RLS).
+    if (!rows.length) {
+      const { data: created, error: createError } = await supabase.from('applicant_cases')
+        .insert({owner_id:signedIn.id, applicant_name:'Práctica consular'})
+        .select('id,applicant_name,owner_id,nationality,destination,visa_type').single();
+      if (createError || !created) throw new Error('No se pudo preparar tu práctica privada. Comprueba las tablas del Tutor en Supabase.');
+      rows = [created as CaseRow];
+    }
     if (!mountedRef.current) return;
     caseProfilesRef.current = rows;
     setCases(rows);
@@ -306,7 +317,8 @@ export default function ApplicantTutorChat() {
     activeCaseRef.current = caseId;
     setError(''); setNotice(''); setTranscript('');
     simulatorRef.current = null; setSimulator(null);
-    gentleOpenRef.current = false; setGentleOpen(false);
+    // Al entrar o cambiar de solicitante, iniciar la primera pregunta sin botón.
+    gentleOpenRef.current = Boolean(caseId); setGentleOpen(Boolean(caseId));
     setDocs([]); setFacts([]); setIndexedIds([]); setSelectedDocs([]); setMessages([]); setPreviousMessages([]); setOlderAvailable(false);
     voiceOnRef.current = false; setVoiceOn(false);
     voiceSessionRef.current = '';
@@ -944,7 +956,7 @@ export default function ApplicantTutorChat() {
         {!messages.length && (
           <div className="cm-tutor-chat-welcome">
             <h1>{caseId ? 'Simulacro consular dirigido por tu Tutor' : 'Tutor Migratorio Personal'}</h1>
-            <p>{caseId ? 'Elige «Práctica tranquila» para ensayar sin correcciones ni documentos, o usa el simulacro basado en tu expediente.' : 'Crea un expediente para comenzar la práctica tranquila, sin subir documentos.'}</p>
+            <p>{caseId ? 'La práctica tranquila comienza automáticamente; puedes volver aquí para elegir el simulacro documental.' : 'Preparando una práctica privada. No necesitas subir documentos.'}</p>
           </div>
         )}
         <div className="cm-tutor-chat-messages">
