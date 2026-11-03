@@ -9,10 +9,13 @@ import vm from 'node:vm';
 const SPLIT_COMPONENTS = {
   'src/components/ApplicantTutorChat.tsx': [
     'src/components/tutor/tutorShared.ts',
+    'lib/tutor/history.ts',
     'src/components/ApplicantTutorChat.tsx',
     'src/components/tutor/TutorMessages.tsx',
     'src/components/tutor/TutorDocumentsBar.tsx',
     'src/components/tutor/TutorComposer.tsx',
+    'src/components/tutor/TutorCaseManager.tsx',
+    'src/components/tutor/useCaseManagement.ts',
   ],
   'src/App.tsx': ['src/routing.ts', 'src/App.tsx', 'src/hooks/useVoiceAgent.ts'],
 };
@@ -396,7 +399,7 @@ test('tutor chat deep links and persistent case navigation survive reloads', () 
 
 test('only owners can request permanent deletion of a private case and stored documents', () => {
   const api = read('api/applicant-tutor.ts');
-  const workspace = read('src/components/ApplicantTutorWorkspace.tsx');
+  const workspace = read('src/components/tutor/TutorCaseManager.tsx');
   const schema = read('supabase/migrations/202610260001_chatmi_applicant_tutor.sql');
   assert.match(api, /action === 'delete_case'/);
   assert.match(api, /target\.owner_id !== auth\.user\.id/);
@@ -405,8 +408,10 @@ test('only owners can request permanent deletion of a private case and stored do
   assert.match(api, /\.remove\(paths\.slice/);
   assert.match(api, /\.delete\(\)\.eq\('id', caseId\)\.eq\('owner_id', auth\.user\.id\)/);
   assert.match(api, /action === 'leave'/);
-  assert.match(workspace, /Eliminar expediente y documentos definitivamente/);
-  assert.match(workspace, /Cancelar una suscripción no elimina automáticamente estos datos/);
+  assert.match(workspace, /Eliminar expediente definitivamente/);
+  assert.match(workspace, /Cancelar una suscripción no los elimina/);
+  // The case-management panel must be mounted in the live Tutor.
+  assert.match(read('src/components/ApplicantTutorChat.tsx'), /<TutorCaseManager/);
   assert.match(schema, /on delete cascade/);
   assert.match(schema, /'chatmi-applicant-cases','chatmi-applicant-cases',false/);
   assert.doesNotMatch(api, /delete from storage\.objects/i);
@@ -703,14 +708,17 @@ test('Tutor opens consular interview automatically and resumes without legacy pr
   assert.match(autoStart,/startingSimulatorCasesRef\.current\.add\(id\)/);
   assert.match(autoStart,/fetch\('\/api\/applicant-simulator'/);
   assert.match(autoStart,/resumeConsularInterview\(documentHistory,payload\.questions\)/);
-  assert.match(autoStart,/const documentHistory = history\.filter\(message =>/);
-  assert.match(autoStart,/message\.content === GENTLE_WELCOME/);
-  assert.match(autoStart,/message\.content === GENTLE_PAUSED/);
+  // History splitting lives in splitTutorHistory (lib/tutor/history.ts).
+  const split=read('lib/tutor/history.ts');
+  assert.match(autoStart,/splitTutorHistory\(history\)/);
+  assert.match(split,/const documentHistory = history\.filter\(message =>/);
+  assert.match(split,/message\.content === GENTLE_WELCOME/);
+  assert.match(split,/message\.content === GENTLE_PAUSED/);
   assert.match(autoStart,/if\(gentleOpenRef\.current\) return/);
   assert.match(autoStart,/if\(progress\.pending\)/);
   assert.match(autoStart,/if\(!readyJobs\?\.length\)/);
   assert.match(autoStart,/setMessages\(\[\.\.\.activeHistory,\{role:'model',content:prompt\}\]\)/);
-  assert.match(autoStart,/firstConsular<0 \? documentHistory : documentHistory\.slice\(0,firstConsular\)/);
+  assert.match(split,/firstConsular<0 \? documentHistory : documentHistory\.slice\(0,firstConsular\)/);
   assert.match(ui,/if\(startingSimulatorCasesRef\.current\.has\(caseId\)\)/);
   assert.doesNotMatch(autoStart,/interviewProgress/);
   assert.doesNotMatch(autoStart,/state\.nextQuestion/);
@@ -723,7 +731,8 @@ test('document-backed interview starts only when prepared; voice cannot silently
   const ui=read('src/components/ApplicantTutorChat.tsx');
   assert.match(ui,/previousMessages\.length>0/);
   assert.match(ui,/Historial anterior/);
-  assert.match(ui,/setPreviousMessages\(firstConsular<0 \? documentHistory : documentHistory\.slice\(0,firstConsular\)\)/);
+  assert.match(ui,/setPreviousMessages\(earlierHistory\)/);
+  assert.match(ui,/previous: earlierHistory/);
   assert.match(ui,/setMessages\(activeHistory\)/);
   assert.match(ui,/response\.status===409/);
   assert.match(ui,/la preparación puede consumir tu cuota de Gemini/);

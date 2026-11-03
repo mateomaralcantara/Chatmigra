@@ -1727,3 +1727,23 @@ input {
   color: #fff;
   cursor: pointer;
 }
+
+/* Gestión del expediente (src/components/tutor/TutorCaseManager.tsx). */
+.cm-tutor-case-manager-body { display: grid; gap: 14px; padding: 10px 2px 4px; }
+.cm-tutor-case-manager-body h3 { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
+.cm-tutor-case-manager-body p,
+.cm-tutor-case-manager-body small,
+.cm-tutor-case-manager-body label { font-size: 12px; line-height: 1.45; opacity: 0.9; }
+.cm-tutor-case-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+.cm-tutor-case-row input,
+.cm-tutor-case-row select { flex: 1 1 160px; min-width: 0; padding: 6px 8px; border: 1px solid var(--cm-border); border-radius: 8px; background: var(--cm-panel); color: var(--cm-text); }
+.cm-tutor-case-row button { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--cm-border); background: var(--cm-panel); color: var(--cm-text); cursor: pointer; }
+.cm-tutor-case-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+.cm-tutor-case-danger { border-top: 1px solid var(--cm-border); padding-top: 10px; }
+.cm-tutor-case-row .cm-tutor-case-delete:not(:disabled) { background: #b42318; border-color: #b42318; color: #fff; }
+.cm-tutor-document-remove { margin-left: auto; padding: 0 8px; border: 0; background: transparent; color: #b42318; font-size: 12px; cursor: pointer; }
+
+.cm-tutor-case-manager .cm-case-tutor-panel { padding: 10px 2px 4px; background: transparent; border: 0; box-shadow: none; }
+.cm-tutor-case-manager .cm-case-tutor-panel h2 { font-size: 13px; font-weight: 700; margin: 0 0 4px; }
+.cm-tutor-case-manager .cm-case-tutor-form,
+.cm-tutor-case-manager .cm-case-tutor-document { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }

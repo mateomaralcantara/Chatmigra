@@ -8,6 +8,10 @@ type Row = Record<string, unknown>;
 
 export class FakeDb {
   tables = new Map<string, Row[]>();
+  /** Storage object paths the app asked to delete. */
+  removedObjects: string[] = [];
+  /** Bodies received by /api/applicant-tutor. */
+  tutorApiCalls: Record<string, unknown>[] = [];
   /** "table:METHOD" -> HTTP status to fail with (simulates outages). */
   failures = new Map<string, number>();
   private clock = 0;
@@ -76,7 +80,12 @@ export class FakeDb {
     if (failure) return reply(failure, { message: 'simulated outage', code: 'E2E' });
 
     if (method === 'GET' || method === 'HEAD') {
-      const rows = this.order(this.filter(this.rows(table), url.searchParams), url.searchParams);
+      // Minimal RLS: a case is visible to its owner and to its members.
+      const visible = table === 'applicant_cases'
+        ? this.rows(table).filter((c) => c.owner_id === USER.id ||
+            this.rows('applicant_case_members').some((m) => m.case_id === c.id && m.user_id === USER.id))
+        : this.rows(table);
+      const rows = this.order(this.filter(visible, url.searchParams), url.searchParams);
       if (single) return rows.length ? reply(200, rows[0]) : reply(406, { code: 'PGRST116', message: 'no rows' });
       return reply(200, rows);
     }
@@ -99,9 +108,63 @@ export class FakeDb {
     return reply(405, { message: method });
   }
 
+  /** Deletes a case like the server does: files first, then every related row. */
+  private deleteCase(caseId: unknown) {
+    for (const doc of this.rows('applicant_case_documents').filter((d) => d.case_id === caseId)) {
+      this.removedObjects.push(String(doc.storage_path));
+    }
+    for (const table of ['applicant_case_documents', 'applicant_case_messages', 'applicant_case_members',
+      'applicant_case_invites', 'applicant_case_index_jobs', 'applicant_case_facts']) {
+      this.tables.set(table, this.rows(table).filter((r) => r.case_id !== caseId));
+    }
+    this.tables.set('applicant_cases', this.rows('applicant_cases').filter((c) => c.id !== caseId));
+  }
+
+  /** Same rules as api/applicant-tutor.ts, against this in-memory data. */
+  private async tutorApi(route: Route) {
+    const body = route.request().postDataJSON() as Record<string, string>;
+    this.tutorApiCalls.push(body);
+    const reply = (status: number, payload: unknown) =>
+      route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(payload) });
+    const target = this.rows('applicant_cases').find((c) => c.id === body.caseId);
+
+    if (body.action === 'invite') {
+      if (!target || target.owner_id !== USER.id) return reply(403, { error: 'Solo el responsable puede invitar colaboradores.' });
+      return reply(200, { inviteCode: 'a'.repeat(48), email: body.email, role: body.role });
+    }
+    if (body.action === 'redeem') {
+      const invite = this.rows('applicant_case_invites').find((i) => i.code === body.code && !i.redeemed_at);
+      if (!invite) return reply(403, { error: 'Invitación vencida o no destinada a tu cuenta.' });
+      invite.redeemed_at = new Date().toISOString();
+      this.insert('applicant_case_members', { case_id: invite.case_id, user_id: USER.id, member_role: 'applicant' });
+      return reply(200, { caseId: invite.case_id });
+    }
+    if (body.action === 'delete_case') {
+      if (!target || target.owner_id !== USER.id) return reply(403, { error: 'Solo el responsable puede eliminar este expediente.' });
+      if (body.confirmName !== target.applicant_name) return reply(400, { error: 'Escribe exactamente el nombre del aplicante para confirmar.' });
+      this.deleteCase(target.id);
+      return reply(200, { success: true });
+    }
+    if (body.action === 'leave') {
+      if (!target || target.owner_id === USER.id) return reply(400, { error: 'El responsable debe eliminar el expediente.' });
+      this.tables.set('applicant_case_members', this.rows('applicant_case_members')
+        .filter((m) => !(m.case_id === target.id && m.user_id === USER.id)));
+      return reply(200, { success: true });
+    }
+    return reply(400, { error: 'Acción no reconocida.' });
+  }
+
   async install(page: Page) {
-    // Registered after the generic fixture, so it takes priority for these tables.
+    // Registered after the generic fixture, so these take priority.
     await page.route(`${SUPABASE}/rest/v1/applicant_*`, (route) => this.handle(route));
+    await page.route('**/api/applicant-tutor', (route) => this.tutorApi(route));
+    await page.route(`${SUPABASE}/storage/v1/object/**`, async (route) => {
+      if (route.request().method() === 'DELETE') {
+        const body = route.request().postDataJSON() as { prefixes?: string[] };
+        this.removedObjects.push(...(body.prefixes ?? []));
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
   }
 }
 

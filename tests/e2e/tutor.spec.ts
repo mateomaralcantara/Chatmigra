@@ -246,3 +246,136 @@ test.describe('Tutor · Simulacro con documentos', () => {
     expect(api.pageErrors).toEqual([]);
   });
 });
+
+test.describe('Tutor · Gestión y privacidad del expediente', () => {
+  const OTHER_USER = '99999999-9999-4999-8999-999999999999';
+  const tutor = (page: Page) => page.getByRole('region', { name: 'Tutor Personal — Chat y Voz' });
+
+  async function openDocumentTutor(page: Page) {
+    await openTutor(page);
+    await practice(page).getByRole('button', { name: 'Volver al Tutor' }).click();
+    await expect(tutor(page)).toBeVisible();
+  }
+  const manager = async (page: Page) => {
+    await tutor(page).getByText('Gestionar expediente').click();
+    return tutor(page).locator('.cm-tutor-case-manager');
+  };
+
+  test('el dueño elimina un documento: se borra el archivo y su registro', async ({ page, api }) => {
+    const owned = db.insert('applicant_cases', { owner_id: '11111111-1111-4111-8111-111111111111', applicant_name: 'Ana Pérez' });
+    db.insert('applicant_case_documents', { case_id: owned.id, filename: 'pasaporte.pdf', mime_type: 'application/pdf', storage_path: `${owned.id}/u/pasaporte.pdf` });
+    await openDocumentTutor(page);
+
+    page.once('dialog', (dialog) => void dialog.accept());
+    await tutor(page).getByText(/^Documentos \(1\)/).click();
+    await tutor(page).getByRole('button', { name: 'Eliminar pasaporte.pdf' }).click();
+
+    await expect(tutor(page).getByText('Documento eliminado.')).toBeVisible();
+    await expect(tutor(page).getByText(/^Documentos \(0\)/)).toBeVisible();
+    expect(db.removedObjects).toEqual([`${owned.id}/u/pasaporte.pdf`]);
+    expect(db.rows('applicant_case_documents')).toHaveLength(0);
+    expect(api.pageErrors).toEqual([]);
+  });
+
+  test('eliminar el expediente exige escribir el nombre exacto y lo borra todo', async ({ page, api }) => {
+    const owned = db.insert('applicant_cases', { owner_id: '11111111-1111-4111-8111-111111111111', applicant_name: 'Ana Pérez' });
+    db.insert('applicant_case_documents', { case_id: owned.id, filename: 'ds160.pdf', mime_type: 'application/pdf', storage_path: `${owned.id}/u/ds160.pdf` });
+    await openDocumentTutor(page);
+    const panel = await manager(page);
+    const deleteButton = panel.getByRole('button', { name: 'Eliminar expediente definitivamente' });
+
+    await expect(deleteButton).toBeDisabled();
+    await panel.getByLabel(/Para eliminar definitivamente/).fill('ana perez');
+    await expect(deleteButton).toBeDisabled();
+    await panel.getByLabel(/Para eliminar definitivamente/).fill('Ana Pérez');
+    await deleteButton.click();
+
+    // El expediente, sus archivos y su historial desaparecen...
+    await expect.poll(() => db.rows('applicant_cases').some((c) => c.id === owned.id)).toBe(false);
+    expect(db.removedObjects).toEqual([`${owned.id}/u/ds160.pdf`]);
+    expect(db.messages(String(owned.id))).toHaveLength(0);
+    // ...y el usuario empieza en una práctica nueva y vacía, no en el expediente borrado.
+    await expect(practice(page)).toBeVisible();
+    await expect(progressBar(page)).toHaveText('Pregunta 1 de 18 · Motivo del viaje');
+    await expect(page).not.toHaveURL(new RegExp(String(owned.id)));
+    expect(db.rows('applicant_cases')).toHaveLength(1);
+    expect(api.pageErrors).toEqual([]);
+  });
+
+  test('borrar el expediente creado automáticamente da paso a uno NUEVO, no al borrado', async ({ page, api }) => {
+    await openDocumentTutor(page); // la app creó «Práctica consular» en esta visita
+    const first = caseId();
+    const panel = await manager(page);
+    await panel.getByLabel(/Para eliminar definitivamente/).fill('Práctica consular');
+    await panel.getByRole('button', { name: 'Eliminar expediente definitivamente' }).click();
+
+    await expect(practice(page)).toBeVisible();
+    await expect(progressBar(page)).toHaveText('Pregunta 1 de 18 · Motivo del viaje');
+    await expect.poll(() => db.rows('applicant_cases').map((c) => c.id)).not.toContain(first);
+    expect(db.rows('applicant_cases')).toHaveLength(1);
+    await expect(page).toHaveURL(new RegExp(`/tutor/${caseId()}$`));
+    expect(api.pageErrors).toEqual([]);
+  });
+
+  test('el dueño crea una invitación y ve el código para compartirlo', async ({ page, api }) => {
+    await openDocumentTutor(page);
+    const panel = await manager(page);
+    await panel.getByLabel('Correo a invitar').fill('asesor@example.com');
+    await panel.getByLabel('Rol de la persona invitada').selectOption('advisor');
+    await panel.getByRole('button', { name: 'Crear invitación' }).click();
+
+    await expect(panel.getByLabel('Código de invitación generado')).toHaveValue('a'.repeat(48));
+    expect(db.tutorApiCalls.at(-1)).toEqual({ action: 'invite', caseId: caseId(), email: 'asesor@example.com', role: 'advisor' });
+    expect(api.pageErrors).toEqual([]);
+  });
+
+  test('un invitado acepta el código, ve el expediente compartido y puede salir de él', async ({ page, api }) => {
+    const shared = db.insert('applicant_cases', { owner_id: OTHER_USER, applicant_name: 'Caso de Luis' });
+    db.insert('applicant_case_invites', { case_id: shared.id, code: 'b'.repeat(48) });
+    await openDocumentTutor(page);
+
+    let panel = await manager(page);
+    await panel.getByLabel('Código de invitación recibido').fill('b'.repeat(48));
+    await panel.getByRole('button', { name: 'Aceptar invitación' }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/tutor/${shared.id}$`));
+
+    // Al abrir el compartido arranca su práctica; volvemos al Tutor para gestionarlo.
+    await practice(page).getByRole('button', { name: 'Volver al Tutor' }).click();
+    panel = await manager(page);
+    await expect(panel.getByRole('button', { name: 'Eliminar expediente definitivamente' })).toHaveCount(0);
+    await panel.getByRole('button', { name: 'Salir de este expediente compartido' }).click();
+    await panel.getByRole('button', { name: 'Sí, salir' }).click();
+
+    await expect.poll(() => db.rows('applicant_case_members').length).toBe(0);
+    await expect(page).not.toHaveURL(new RegExp(String(shared.id)));
+    expect(db.rows('applicant_cases').some((c) => c.id === shared.id)).toBe(true); // el del dueño sigue intacto
+    expect(api.pageErrors).toEqual([]);
+  });
+
+  test('un código inválido muestra el motivo y no cambia de expediente', async ({ page }) => {
+    await openDocumentTutor(page);
+    const before = page.url();
+    const panel = await manager(page);
+    await panel.getByLabel('Código de invitación recibido').fill('c'.repeat(48));
+    await panel.getByRole('button', { name: 'Aceptar invitación' }).click();
+    await expect(tutor(page).getByRole('alert')).toHaveText('Invitación vencida o no destinada a tu cuenta.');
+    expect(page.url()).toBe(before);
+  });
+});
+
+test('Tutor · seguimiento: crear una tarea y marcarla como completada', async ({ page, api }) => {
+  await openTutor(page);
+  await practice(page).getByRole('button', { name: 'Volver al Tutor' }).click();
+  const tutor = page.getByRole('region', { name: 'Tutor Personal — Chat y Voz' });
+  await tutor.locator('summary', { hasText: 'Tareas pendientes' }).click();
+
+  await tutor.getByLabel('Nueva tarea').fill('Pedir carta laboral');
+  await tutor.getByRole('button', { name: 'Guardar pendiente' }).click();
+  await expect(tutor.getByText('Pedir carta laboral')).toBeVisible();
+
+  await tutor.getByLabel('Estado de Pedir carta laboral').selectOption('completed');
+  await expect.poll(() => db.rows('applicant_case_tasks')[0]?.status).toBe('completed');
+  expect(db.rows('applicant_case_tasks')[0]).toMatchObject({ case_id: caseId(), title: 'Pedir carta laboral' });
+  expect(api.pageErrors).toEqual([]);
+});

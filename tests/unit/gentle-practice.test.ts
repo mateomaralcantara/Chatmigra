@@ -1,5 +1,7 @@
 // Unit family: Práctica Consular Amable, recorrida de principio a fin.
 import { describe, expect, it } from 'vitest';
+import { CONSULAR_SKILLS } from '../../lib/tutor/consularSkills';
+import { splitTutorHistory } from '../../lib/tutor/history';
 import {
   GENTLE_FINISHED,
   GENTLE_PAUSED,
@@ -86,5 +88,24 @@ describe('Práctica Amable: pausas y el simulacro documental', () => {
       model(GENTLE_RESUMED),
     ];
     expect(resumeGentlePractice(history)).toMatchObject({ paused: false, index: 1, awaiting: true, answered: 1 });
+  });
+});
+
+describe('splitTutorHistory (simulacro documental)', () => {
+  it('nunca mezcla turnos de la Práctica Amable con el simulacro', () => {
+    const { documentHistory } = splitTutorHistory([
+      model(GENTLE_WELCOME), model(GENTLE_QUESTIONS[0].text), user('Turismo'), model(GENTLE_PAUSED),
+      model(CONSULAR_SKILLS[0].question), user('Ana Pérez'),
+      model(GENTLE_RESUMED), user('respuesta de práctica'), model(GENTLE_FINISHED),
+    ]);
+    expect(documentHistory.map((m) => m.content)).toEqual([CONSULAR_SKILLS[0].question, 'Ana Pérez']);
+  });
+
+  it('el chat antiguo queda como historial anterior, fuera del simulacro activo', () => {
+    const { previous, active } = splitTutorHistory([
+      user('pregunta vieja'), model('respuesta vieja'), model(CONSULAR_SKILLS[0].question), user('Ana'),
+    ]);
+    expect(previous.map((m) => m.content)).toEqual(['pregunta vieja', 'respuesta vieja']);
+    expect(active.map((m) => m.content)).toEqual([CONSULAR_SKILLS[0].question, 'Ana']);
   });
 });

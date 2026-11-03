@@ -18,11 +18,13 @@ type Props = {
   onPrepare: () => void;
   onToggleDoc: (id: string) => void;
   onReviewFact: (fact: FactRow, approve: boolean) => void;
+  canDeleteDoc: (doc: DocRow) => boolean;
+  onDeleteDoc: (doc: DocRow) => void;
 };
 
 export default function TutorDocumentsBar({
   caseId, loading, simulatorActive, docs, indexedIds, selectedDocs, facts, canReviewFacts,
-  fileRef, onUpload, onStartSimulator, onStopSimulator, onPrepare, onToggleDoc, onReviewFact,
+  fileRef, onUpload, onStartSimulator, onStopSimulator, onPrepare, onToggleDoc, onReviewFact, canDeleteDoc, onDeleteDoc,
 }: Props) {
   return (
   <div className="cm-tutor-documents-bar">
@@ -45,6 +47,8 @@ export default function TutorDocumentsBar({
         {docs.length ? docs.map(doc => <label key={doc.id}>
           <input type="checkbox" checked={selectedDocs.includes(doc.id)} onChange={() => onToggleDoc(doc.id)} disabled={loading} />
           <span title={doc.filename}>{doc.filename} {indexedIds.includes(doc.id) ? '✓ listo' : ''}</span>
+          {canDeleteDoc(doc) && <button type="button" className="cm-tutor-document-remove" disabled={loading}
+            aria-label={'Eliminar ' + doc.filename} onClick={(event) => { event.preventDefault(); onDeleteDoc(doc); }}>Eliminar</button>}
         </label>) : <p>No hay documentos todavía.</p>}
       </div>
     </details>
