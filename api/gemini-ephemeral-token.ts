@@ -1,3 +1,4 @@
+import { rejectIfRateLimited } from '../server/http';
 import { readServerEnv } from '../server/env';
 import {
   requireAuthenticatedUser,
@@ -26,6 +27,7 @@ export default async function handler(
   if (!auth) {
     return res.status(401).json({ error: 'Authentication required' });
   }
+  if (rejectIfRateLimited(res, auth.user.id, 'gemini-live-token')) return;
 
   const apiKey = (
     readServerEnv('GEMINI_API_KEY') ||

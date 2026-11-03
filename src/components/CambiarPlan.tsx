@@ -71,20 +71,23 @@ const CambiarPlan: React.FC<CambiarPlanProps> = ({
       setInfo('');
 
       try {
-        const response = await authorizedFetch('/api/paypal/capture-order', {
-          method: 'POST',
-          body: JSON.stringify({
-            orderId: data.orderID,
-          }),
-        });
+        // ACTIVATION_PENDING means PayPal already charged the order but the
+        // database write failed; the server finishes it idempotently on retry.
+        let response: Response | null = null;
+        let result: { ok?: boolean; plan?: string; error?: string; code?: string } = {};
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 2000 * attempt));
+          response = await authorizedFetch('/api/paypal/capture-order', {
+            method: 'POST',
+            body: JSON.stringify({
+              orderId: data.orderID,
+            }),
+          });
+          result = (await response.json().catch(() => ({}))) as typeof result;
+          if (result.code !== 'ACTIVATION_PENDING') break;
+        }
 
-        const result = (await response.json().catch(() => ({}))) as {
-          ok?: boolean;
-          plan?: string;
-          error?: string;
-        };
-
-        if (!response.ok || !result.ok || result.plan !== 'premium') {
+        if (!response?.ok || !result.ok || result.plan !== 'premium') {
           throw new Error(
             result.error || 'No se pudo verificar el pago Premium.',
           );

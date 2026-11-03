@@ -1,6 +1,17 @@
 const PREMIUM_PRICE = '19.95';
 const PREMIUM_CURRENCY = 'USD';
 
+export class PayPalError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly issue?: string,
+  ) {
+    super(message);
+    this.name = 'PayPalError';
+  }
+}
+
 function env(name: string): string {
   return (process.env[name] || '').trim();
 }
@@ -16,7 +27,7 @@ function credentials(): { clientId: string; clientSecret: string } {
   const clientSecret = env('PAYPAL_CLIENT_SECRET');
 
   if (!clientId || !clientSecret) {
-    throw new Error('PAYPAL_SERVER_CONFIG_MISSING');
+    throw new PayPalError('PAYPAL_SERVER_CONFIG_MISSING', 503);
   }
 
   return { clientId, clientSecret };
@@ -41,7 +52,7 @@ export async function getPayPalAccessToken(): Promise<string> {
   };
 
   if (!response.ok || !data.access_token) {
-    throw new Error(data.error_description || 'PAYPAL_AUTH_FAILED');
+    throw new PayPalError('PAYPAL_AUTH_FAILED', response.status);
   }
 
   return data.access_token;
@@ -78,7 +89,7 @@ export async function createPremiumOrder(userId: string): Promise<{ id: string }
   };
 
   if (!response.ok || !data.id) {
-    throw new Error(data.message || 'PAYPAL_CREATE_ORDER_FAILED');
+    throw new PayPalError('PAYPAL_CREATE_ORDER_FAILED', response.status);
   }
 
   return { id: data.id };
@@ -103,6 +114,37 @@ export interface PayPalCapture {
   }>;
 }
 
+type PayPalErrorBody = PayPalCapture & {
+  message?: string;
+  details?: Array<{ issue?: string }>;
+};
+
+export async function getPremiumOrder(orderId: string): Promise<PayPalCapture> {
+  const accessToken = await getPayPalAccessToken();
+
+  const response = await fetch(
+    `${paypalBaseUrl()}/v2/checkout/orders/${encodeURIComponent(orderId)}`,
+    {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+
+  const data = (await response.json().catch(() => ({}))) as PayPalErrorBody;
+
+  if (!response.ok) {
+    throw new PayPalError('PAYPAL_GET_ORDER_FAILED', response.status, data.details?.[0]?.issue);
+  }
+
+  return data;
+}
+
+/**
+ * Captures the order. When PayPal reports that the order was already captured
+ * (a retry after a network drop or a failed database write), the existing
+ * order is read back so the caller can finish activation idempotently instead
+ * of leaving a paying customer without Premium.
+ */
 export async function capturePremiumOrder(orderId: string): Promise<PayPalCapture> {
   const accessToken = await getPayPalAccessToken();
 
@@ -113,17 +155,20 @@ export async function capturePremiumOrder(orderId: string): Promise<PayPalCaptur
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
+        'PayPal-Request-Id': `chatmi-capture-${orderId}`,
       },
       body: '{}',
     },
   );
 
-  const data = (await response.json().catch(() => ({}))) as PayPalCapture & {
-    message?: string;
-  };
+  const data = (await response.json().catch(() => ({}))) as PayPalErrorBody;
 
   if (!response.ok) {
-    throw new Error(data.message || 'PAYPAL_CAPTURE_FAILED');
+    const issue = data.details?.[0]?.issue;
+    if (issue === 'ORDER_ALREADY_CAPTURED') {
+      return getPremiumOrder(orderId);
+    }
+    throw new PayPalError('PAYPAL_CAPTURE_FAILED', response.status, issue);
   }
 
   return data;
@@ -144,7 +189,7 @@ export function validatePremiumCapture(
     payment.amount?.value !== PREMIUM_PRICE ||
     !payment.id
   ) {
-    throw new Error('PAYPAL_CAPTURE_VALIDATION_FAILED');
+    throw new PayPalError('PAYPAL_CAPTURE_VALIDATION_FAILED', 422);
   }
 
   return {

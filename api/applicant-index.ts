@@ -1,3 +1,4 @@
+import { rejectIfRateLimited } from '../server/http';
 import { readServerEnv } from '../server/env';
 import { extractCaseFactCandidates } from '../lib/tutor/facts';
 import { getAdminSupabase, requireAuthenticatedUser, type RequestLike } from '../server/supabase';
@@ -55,6 +56,7 @@ export default async function handler(req: Request, res: Response) {
   if (req.method !== 'POST') return res.status(405).json({error:'Método no permitido.'});
   const auth = await requireAuthenticatedUser(req);
   if (!auth) return res.status(401).json({error:'Inicia sesión para indexar documentos.'});
+  if (rejectIfRateLimited(res, auth.user.id, 'applicant-index')) return;
   const input = bodyObject(req.body);
   const documentId = typeof input.documentId === 'string' ? input.documentId : '';
   if (!UUID.test(documentId)) return res.status(400).json({error:'Documento inválido.'});

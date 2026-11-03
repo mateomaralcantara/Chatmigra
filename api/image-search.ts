@@ -1,3 +1,4 @@
+import { rejectIfRateLimited } from '../server/http';
 import {
   requireAuthenticatedUser,
   type RequestLike,
@@ -22,6 +23,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (!auth) {
     return res.status(401).json({ error: 'Authentication required' });
   }
+  if (rejectIfRateLimited(res, auth.user.id, 'image-search')) return;
 
   const googleApiKey = (process.env.GOOGLE_API_KEY || '').trim();
   const googleCx = (process.env.GOOGLE_CX || '').trim();

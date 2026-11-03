@@ -1,3 +1,4 @@
+import { rejectIfRateLimited } from '../server/http';
 import { createHash, randomBytes } from 'node:crypto';
 import { getAdminSupabase, requireAuthenticatedUser, type RequestLike } from '../server/supabase';
 
@@ -31,6 +32,7 @@ export default async function handler(req: Request, res: Response) {
   if (!auth || !auth.user.email) {
     return res.status(401).json({ error: 'Inicia sesión para acceder al expediente.' });
   }
+  if (rejectIfRateLimited(res, auth.user.id, 'applicant-tutor')) return;
   const body = payload(req.body);
   const action = body.action;
   if (action !== 'invite' && action !== 'redeem' && action !== 'delete_case' && action !== 'leave') {

@@ -1,3 +1,4 @@
+import { rejectIfRateLimited } from '../server/http';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { directFactKey } from '../lib/tutor/facts';
 import { readServerEnv } from '../server/env';
@@ -247,6 +248,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       code: 'AUTH_REQUIRED',
     });
   }
+  if (rejectIfRateLimited(res, auth.user.id, 'gemini')) return;
 
   const apiKey = (
     readServerEnv('GEMINI_API_KEY') ||
