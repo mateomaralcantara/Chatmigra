@@ -64,10 +64,13 @@ export function resumeGentlePractice(history:readonly GentleMessage[]):GentlePro
   if(start<0)return {started:false,completed:false,paused:false,index:0,awaiting:false,answered:0};
   let index=0,awaiting=false,answered=0,paused=false,completed=false;
   for(const message of history.slice(start+1)){
+    if(message.role==='model'&&message.content===GENTLE_RESUMED){paused=false;continue;}
+    // While paused, the same case history receives the documentary
+    // simulator's turns; none of them belong to this practice.
+    if(paused)continue;
     if(message.role==='model'){
       if(message.content===GENTLE_FINISHED){completed=true;awaiting=false;continue;}
       if(message.content===GENTLE_PAUSED){paused=true;continue;}
-      if(message.content===GENTLE_RESUMED){paused=false;continue;}
       const q=GENTLE_QUESTIONS.findIndex(item=>item.text===message.content);
       if(q>=0){index=q;awaiting=true;}
     }else if(awaiting){

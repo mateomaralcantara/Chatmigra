@@ -39,6 +39,8 @@ export default function GentlePractice({caseId,onExit}:Props) {
   const [voiceEnabled,setVoiceEnabled]=useState(false);
   const [listening,setListening]=useState(false);
   const [speaking,setSpeaking]=useState(false);
+  // Bumped by «Reintentar» to run the initial load again after a failure.
+  const [attempt,setAttempt]=useState(0);
   const recordsRef=useRef<Message[]>([]);
   const progressRef=useRef<GentleProgress>(FIRST);
   const micRef=useRef<Recognition|null>(null);
@@ -258,7 +260,7 @@ export default function GentlePractice({caseId,onExit}:Props) {
       clearTimer();micRef.current?.stop();window.speechSynthesis?.cancel();};
     // Each practice component instance belongs to a single private case.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[caseId]);
+  },[caseId,attempt]);
 
   useEffect(()=>{endRef.current?.scrollIntoView({block:'end',behavior:'smooth'});},[messages]);
 
@@ -321,6 +323,9 @@ export default function GentlePractice({caseId,onExit}:Props) {
           )}
           {progress.completed && (
             <button type="button" disabled={busy} onClick={()=>void begin(true)}>Repetir práctica</button>
+          )}
+          {!progress.started && !busy && error && (
+            <button type="button" onClick={()=>{setError('');setBusy(true);setAttempt(n=>n+1);}}>Reintentar</button>
           )}
         </div>
         {error&&<p role="alert" className="cm-inline-error">{error}</p>}
