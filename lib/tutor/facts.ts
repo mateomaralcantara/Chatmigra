@@ -38,12 +38,12 @@ const DATE_MATCH = [
 ];
 
 const FIELD_LABELS: {key: CaseFactKey; label: RegExp}[] = [
-  {key:'date_of_birth', label:/\b(?:date of birth|fecha de nacimiento|dob)\s*(?:\([^)]*\))?\s*[:\-]\s*/i},
-  {key:'applicant_name',label:/\b(?:full name|nombre completo|applicant name|nombre del solicitante)\s*[:\-]\s*/i},
-  {key:'visa_type',label:/\b(?:visa type|tipo de visa|visa class|clase de visa)\s*[:\-]\s*/i},
-  {key:'nationality',label:/\b(?:nationality|nacionalidad)\s*[:\-]\s*/i},
-  {key:'destination',label:/\b(?:destination country|pa[ií]s de destino)\s*[:\-]\s*/i},
-  {key:'passport_number',label:/\b(?:passport number|n[uú]mero de pasaporte)\s*[:\-]\s*/i},
+  {key:'date_of_birth', label:/\b(?:date of birth|fecha de nacimiento|dob)\s*(?:\([^)]*\))?\s*[:-]\s*/i},
+  {key:'applicant_name',label:/\b(?:full name|nombre completo|applicant name|nombre del solicitante)\s*[:-]\s*/i},
+  {key:'visa_type',label:/\b(?:visa type|tipo de visa|visa class|clase de visa)\s*[:-]\s*/i},
+  {key:'nationality',label:/\b(?:nationality|nacionalidad)\s*[:-]\s*/i},
+  {key:'destination',label:/\b(?:destination country|pa[ií]s de destino)\s*[:-]\s*/i},
+  {key:'passport_number',label:/\b(?:passport number|n[uú]mero de pasaporte)\s*[:-]\s*/i},
 ];
 
 export function extractCaseFactCandidates(text: string):

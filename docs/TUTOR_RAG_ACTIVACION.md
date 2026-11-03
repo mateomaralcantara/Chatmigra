@@ -2,8 +2,8 @@
 
 ## Requisitos
 
-1. Activar primero `supabase/setup/chatmi-applicant-tutor.sql` **solo si todavía no se instaló**.
-2. En el **mismo proyecto Supabase que utiliza ChatMi** ejecutar `supabase/setup/chatmi-applicant-tutor-rag.sql` desde SQL Editor.
+1. Activar primero `supabase/migrations/202610260001_chatmi_applicant_tutor.sql` **solo si todavía no se instaló**.
+2. En el **mismo proyecto Supabase que utiliza ChatMi** ejecutar `supabase/migrations/202610260003_chatmi_applicant_tutor_rag.sql` desde SQL Editor.
 3. Mantener `SUPABASE_SERVICE_ROLE_KEY` y `GEMINI_API_KEY` exclusivamente en el servidor; nunca publicarlas en Vite.
 
 ## Uso

@@ -1,3 +1,4 @@
+import { rejectIfRateLimited } from '../../server/http';
 import { createPremiumOrder } from '../../server/paypal';
 import {
   getAdminSupabase,
@@ -23,6 +24,8 @@ export default async function handler(req: RequestLike & { method?: string }, re
     return res.status(401).json({ error: 'Authentication required' });
   }
 
+  if (rejectIfRateLimited(res, auth.user.id, 'paypal-create')) return;
+
   if (!getAdminSupabase()) {
     return res.status(503).json({
       error: 'Premium payments are temporarily unavailable',
@@ -35,8 +38,9 @@ export default async function handler(req: RequestLike & { method?: string }, re
     return res.status(200).json(order);
   } catch (error) {
     console.error('[paypal/create-order]', error);
-    return res.status(500).json({
-      error: error instanceof Error ? error.message : 'Unable to create order',
+    return res.status(502).json({
+      error: 'No pudimos iniciar el pago con PayPal. Inténtalo de nuevo.',
+      code: 'PAYPAL_UNAVAILABLE',
     });
   }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import LegalNotice from './LegalNotice';
 import ProfilePhotoMenu from './ProfilePhotoMenu';
 
 type PaletteId = 'classic' | 'ocean' | 'mint' | 'violet';
@@ -209,6 +210,7 @@ export default function PremiumShell({ children }: PremiumShellProps) {
         <main className="cm-reference-stage">
           {children}
         </main>
+        <LegalNotice />
       </section>
     </div>
   );

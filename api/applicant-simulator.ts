@@ -1,3 +1,4 @@
+import { rejectIfRateLimited } from '../server/http';
 import { requireAuthenticatedUser, type RequestLike } from '../server/supabase';
 import { createConsularQuestions, type CaseDocumentExcerpt } from '../lib/tutor/consularSkills';
 
@@ -21,6 +22,7 @@ export default async function handler(req:Request,res:Response) {
   if(req.method!=='POST')return res.status(405).json({error:'Método no permitido.'});
   const auth=await requireAuthenticatedUser(req);
   if(!auth)return res.status(401).json({error:'Debes iniciar sesión.'});
+  if (rejectIfRateLimited(res, auth.user.id, 'applicant-simulator')) return;
   const body=bodyObject(req.body);
   const caseId=typeof body.caseId==='string'?body.caseId:'';
   const inputIds=body.documentIds;

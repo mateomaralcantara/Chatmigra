@@ -1,6 +1,8 @@
 import type { SupabaseClient, User as SupabaseUser } from '@supabase/supabase-js';
+import { parseJsonObject, rejectIfRateLimited } from '../../server/http';
 import {
   capturePremiumOrder,
+  PayPalError,
   validatePremiumCapture,
 } from '../../server/paypal';
 import {
@@ -18,17 +20,6 @@ interface ApiResponse {
   status(code: number): ApiResponse;
   json(body: unknown): void;
   setHeader?(name: string, value: string): void;
-}
-
-function readBody(body: unknown): Record<string, unknown> {
-  if (body == null) return {};
-
-  if (typeof body === 'string') {
-    const value = body.trim();
-    return value ? (JSON.parse(value) as Record<string, unknown>) : {};
-  }
-
-  return typeof body === 'object' ? (body as Record<string, unknown>) : {};
 }
 
 async function persistPremiumSubscription(
@@ -113,6 +104,14 @@ async function persistPayment(
   currency: string,
   now: string,
 ): Promise<void> {
+  // Retries of the same capture must never record the payment twice.
+  const existing = await admin
+    .from('payments')
+    .select('id')
+    .eq('provider_capture_id', captureId)
+    .limit(1);
+  if (!existing.error && existing.data && existing.data.length > 0) return;
+
   let paymentWrite = await admin.from('payments').insert({
     user_id: user.id,
     user_email: user.email ?? null,
@@ -130,6 +129,7 @@ async function persistPayment(
       user_email: user.email ?? null,
       provider: 'paypal_checkout',
       provider_subscription_id: orderId,
+      provider_capture_id: captureId,
       amount,
       currency,
       status: 'paid',
@@ -161,18 +161,44 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     });
   }
 
+  const body = parseJsonObject(req.body);
+  if (!body) {
+    return res.status(400).json({ error: 'Invalid JSON body', code: 'INVALID_BODY' });
+  }
+
+  const orderId = typeof body.orderId === 'string' ? body.orderId.trim() : '';
+  if (!orderId || !/^[A-Z0-9-]{1,64}$/i.test(orderId)) {
+    return res.status(400).json({ error: 'orderId is required', code: 'INVALID_ORDER_ID' });
+  }
+
+  if (rejectIfRateLimited(res, auth.user.id, 'paypal-capture')) return;
+
+  let verified: ReturnType<typeof validatePremiumCapture>;
   try {
-    const body = readBody(req.body);
-    const orderId = typeof body.orderId === 'string' ? body.orderId.trim() : '';
-
-    if (!orderId) {
-      return res.status(400).json({ error: 'orderId is required' });
-    }
-
     const captureResult = await capturePremiumOrder(orderId);
-    const verified = validatePremiumCapture(captureResult, auth.user.id);
-    const now = new Date().toISOString();
+    verified = validatePremiumCapture(captureResult, auth.user.id);
+  } catch (error) {
+    console.error('[paypal/capture-order] capture', error);
+    if (error instanceof PayPalError && error.message === 'PAYPAL_CAPTURE_VALIDATION_FAILED') {
+      return res.status(422).json({
+        error: 'El pago no coincide con el plan Premium de esta cuenta.',
+        code: 'PAYMENT_NOT_VALID',
+      });
+    }
+    if (error instanceof PayPalError && error.status >= 400 && error.status < 500) {
+      return res.status(402).json({
+        error: 'PayPal no confirmó el pago. No se realizó ningún cargo nuevo.',
+        code: 'PAYMENT_NOT_CAPTURED',
+      });
+    }
+    return res.status(502).json({
+      error: 'No pudimos comunicarnos con PayPal. Inténtalo de nuevo.',
+      code: 'PAYPAL_UNAVAILABLE',
+    });
+  }
 
+  try {
+    const now = new Date().toISOString();
     await persistPremiumSubscription(admin, auth.user, orderId, now);
     await persistPayment(
       admin,
@@ -183,18 +209,21 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       verified.currency,
       now,
     );
-
-    return res.status(200).json({
-      ok: true,
-      plan: 'premium',
-      orderId,
-      captureId: verified.captureId,
-    });
   } catch (error) {
-    console.error('[paypal/capture-order]', error);
-
-    return res.status(500).json({
-      error: error instanceof Error ? error.message : 'Unable to capture order',
+    // The money was captured: tell the client to retry. A retry reads the
+    // already-captured order back from PayPal and finishes activation.
+    console.error('[paypal/capture-order] activation', error);
+    return res.status(503).json({
+      error: 'Tu pago fue recibido; estamos activando Premium. Reintenta en unos segundos.',
+      code: 'ACTIVATION_PENDING',
+      orderId,
     });
   }
+
+  return res.status(200).json({
+    ok: true,
+    plan: 'premium',
+    orderId,
+    captureId: verified.captureId,
+  });
 }

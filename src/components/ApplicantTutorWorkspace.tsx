@@ -188,10 +188,13 @@ export default function ApplicantTutorWorkspace() {
     void refreshCaseData(selectedId).catch((caught) => setError(caught.message));
   }, [selectedId, refreshCaseData]);
 
+  // Reset the notes editor only when the case or its saved notes change.
+  const selectedCaseId = selectedCase?.id;
+  const savedNotes = selectedCase?.profile_notes;
   useEffect(() => {
-    if (!selectedCase) return;
-    setNotes(selectedCase.profile_notes);
-  }, [selectedCase?.id, selectedCase?.profile_notes]);
+    if (!selectedCaseId) return;
+    setNotes(savedNotes ?? '');
+  }, [selectedCaseId, savedNotes]);
 
   const createCase = async (event: FormEvent) => {
     event.preventDefault();

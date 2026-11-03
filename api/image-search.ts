@@ -1,3 +1,4 @@
+import { rejectIfRateLimited } from '../server/http';
 import {
   requireAuthenticatedUser,
   type RequestLike,
@@ -22,6 +23,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (!auth) {
     return res.status(401).json({ error: 'Authentication required' });
   }
+  if (rejectIfRateLimited(res, auth.user.id, 'image-search')) return;
 
   const googleApiKey = (process.env.GOOGLE_API_KEY || '').trim();
   const googleCx = (process.env.GOOGLE_CX || '').trim();
@@ -52,7 +54,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     url.searchParams.set('num', String(n));
 
     const response = await fetch(url);
-    const data = (await response.json().catch(() => ({}))) as any;
+    const data = (await response.json().catch(() => ({}))) as { items?: Array<{ link?: string; title?: string }> };
 
     if (!response.ok) {
       console.error('[image-search] Google API error', response.status, data);
@@ -60,7 +62,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const results = Array.isArray(data?.items)
-      ? data.items.map((item: any) => ({
+      ? data.items.map((item) => ({
           url: item.link,
           title: item.title,
         }))

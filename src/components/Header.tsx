@@ -17,7 +17,7 @@ const Header: React.FC<HeaderProps> = ({
   onNavigate,
 }) => {
   const isLoggedIn = !!user;
-  const isAdmin = Boolean(user && (user as any).isAdmin);
+  const isAdmin = Boolean(user?.isAdmin);
 
   const NavButton: React.FC<{
     active?: boolean;

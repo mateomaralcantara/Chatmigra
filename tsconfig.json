@@ -42,6 +42,9 @@
     "src/**/*.tsx",
     "api/**/*.ts",
     "server/**/*.ts",
+    "lib/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts",
     "vite-env.d.ts"
   ]
 }

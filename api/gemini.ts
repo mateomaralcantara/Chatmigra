@@ -1,3 +1,7 @@
+import { candidateText, type GeminiResponse } from '../server/gemini-response';
+
+type ChunkRow = { filename?: unknown; chunk_index?: unknown; content?: unknown };
+import { rejectIfRateLimited } from '../server/http';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { directFactKey } from '../lib/tutor/facts';
 import { readServerEnv } from '../server/env';
@@ -247,6 +251,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       code: 'AUTH_REQUIRED',
     });
   }
+  if (rejectIfRateLimited(res, auth.user.id, 'gemini')) return;
 
   const apiKey = (
     readServerEnv('GEMINI_API_KEY') ||
@@ -425,13 +430,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
               p_query: last, p_limit: 8,
             });
           if (!searchError && Array.isArray(found) && found.length) {
-            retrievedContext = found.map((row: any) => {
+            retrievedContext = (found as ChunkRow[]).map((row) => {
               const name = String(row.filename || 'Documento').slice(0,180);
               const index = Number(row.chunk_index || 0);
               const excerpt = String(row.content || '').slice(0,3500);
               return '[Fuente: ' + name + ', fragmento ' + (index + 1) + ']\n' + excerpt;
             }).join('\n\n');
-            sources.push(...new Set(found.map((row: any) => String(row.filename || 'Documento'))));
+            sources.push(...new Set((found as ChunkRow[]).map((row) => String(row.filename || 'Documento'))));
             retrievalMode = 'indexed';
           }
         }
@@ -556,19 +561,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         let pending = '';
         const processLine = (line: string) => {
           if (!line.startsWith('data: ')) return;
-          let piece: any;
+          let piece: GeminiResponse;
           try { piece = JSON.parse(line.slice(6)); } catch { return; }
           const candidate = piece?.candidates?.[0];
-          const delta: string = Array.isArray(candidate?.content?.parts)
-            ? candidate.content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('')
-            : '';
+          const delta: string = candidateText(candidate);
           if (delta) {
             output += delta;
             emit({ type: 'delta', text: delta });
           }
           if (typeof candidate?.finishReason === 'string') finishReason = candidate.finishReason;
           if (Number.isFinite(piece?.usageMetadata?.totalTokenCount)) {
-            observedTokens = Math.max(observedTokens, piece.usageMetadata.totalTokenCount);
+            observedTokens = Math.max(observedTokens, Number(piece.usageMetadata?.totalTokenCount));
           }
         };
         while (true) {
@@ -605,7 +608,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const raw = await googleResponse.text();
-    let data: any;
+    let data: GeminiResponse;
 
     try {
       data = raw ? JSON.parse(raw) : {};
@@ -626,12 +629,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
-    const text = Array.isArray(data?.candidates?.[0]?.content?.parts)
-      ? data.candidates[0].content.parts
-          .map((part: any) => (typeof part?.text === 'string' ? part.text : ''))
-          .join('')
-          .trim()
-      : '';
+    const text = candidateText(data?.candidates?.[0]).trim();
 
     if (!text) {
       if (reservationId) await finalizeQuota(0);
