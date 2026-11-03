@@ -6,6 +6,11 @@ import AuthWrapper from './AuthWrapper';
 import AdminApp from './src/AdminApp';
 import ResetPassword from './src/components/ResetPassword';
 import PremiumShell from './src/ui/PremiumShell';
+import ErrorBoundary from './src/ui/ErrorBoundary';
+import { initMonitoring, reportError } from './src/services/monitoring';
+
+void initMonitoring();
+window.addEventListener('unhandledrejection', (event) => reportError(event.reason, { kind: 'unhandledrejection' }));
 
 const rootElement = document.getElementById('root');
 
@@ -18,14 +23,16 @@ const path = window.location.pathname;
 
 root.render(
   <React.StrictMode>
-    {path.startsWith('/reset-password') ? (
-      <ResetPassword />
-    ) : path.startsWith('/admin') ? (
-      <AdminApp />
-    ) : (
-      <PremiumShell>
-        <AuthWrapper />
-      </PremiumShell>
-    )}
+    <ErrorBoundary>
+      {path.startsWith('/reset-password') ? (
+        <ResetPassword />
+      ) : path.startsWith('/admin') ? (
+        <AdminApp />
+      ) : (
+        <PremiumShell>
+          <AuthWrapper />
+        </PremiumShell>
+      )}
+    </ErrorBoundary>
   </React.StrictMode>,
 );

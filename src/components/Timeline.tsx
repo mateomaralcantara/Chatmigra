@@ -2,6 +2,14 @@
 import React from 'react';
 import { TimelineData } from '../types';
 
+// The model sometimes returns items/steps instead of events; all are optional.
+interface TimelineItem {
+  status?: string;
+  date?: string;
+  title?: string;
+  description?: string;
+}
+
 interface TimelineProps {
   data: TimelineData;
 }
@@ -34,9 +42,9 @@ const StatusDot: React.FC<{ status?: string }> = ({ status }) => {
 
 const Timeline: React.FC<TimelineProps> = ({ data }) => {
   // Permitimos data.items, data.steps o data.events
-  const anyData = data as any;
-  const rawItems = anyData.items ?? anyData.steps ?? anyData.events ?? [];
-  const items: any[] = Array.isArray(rawItems) ? rawItems : [];
+  const loose = data as TimelineData & { items?: unknown; steps?: unknown };
+  const rawItems = loose.items ?? loose.steps ?? loose.events ?? [];
+  const items: TimelineItem[] = Array.isArray(rawItems) ? rawItems : [];
 
   if (!items.length) {
     return (

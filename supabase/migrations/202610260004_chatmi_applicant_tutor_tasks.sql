@@ -1,5 +1,5 @@
 -- ChatMi tutor: seguimiento persistente por expediente.
--- Ejecutar DESPUÉS de supabase/setup/chatmi-applicant-tutor.sql
+-- Ejecutar DESPUÉS de supabase/migrations/202610260001_chatmi_applicant_tutor.sql
 create table if not exists public.applicant_case_tasks (
  id uuid primary key default gen_random_uuid(),
  case_id uuid not null references public.applicant_cases(id) on delete cascade,

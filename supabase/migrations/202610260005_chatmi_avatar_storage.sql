@@ -1,7 +1,6 @@
 -- CHATMI / Profile photos (run separately in Supabase SQL Editor).
+-- Idempotente: se puede ejecutar de nuevo sin perder datos.
 -- Project: vovxtzcngqzdwjddrcis
--- This is intentionally a standalone setup script, NOT a queued migration:
--- do not execute the pending 202610250001 quota migration just to enable avatars.
 -- Public photo bucket: uploaded profile images can be viewed by anyone with their URL.
 -- Browser can only upload/delete files in the logged-in user's UUID folder.
 

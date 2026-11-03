@@ -4,7 +4,20 @@ import test from 'node:test';
 import ts from 'typescript';
 import vm from 'node:vm';
 
-const read = (path) => fs.readFileSync(path, 'utf8');
+// Components split into a folder are read as one unit, in source order, so
+// these architectural guards keep checking the whole feature.
+const SPLIT_COMPONENTS = {
+  'src/components/ApplicantTutorChat.tsx': [
+    'src/components/tutor/tutorShared.ts',
+    'src/components/ApplicantTutorChat.tsx',
+    'src/components/tutor/TutorMessages.tsx',
+    'src/components/tutor/TutorDocumentsBar.tsx',
+    'src/components/tutor/TutorComposer.tsx',
+  ],
+  'src/App.tsx': ['src/routing.ts', 'src/App.tsx', 'src/hooks/useVoiceAgent.ts'],
+};
+const read = (path) =>
+  (SPLIT_COMPONENTS[path] || [path]).map((file) => fs.readFileSync(file, 'utf8')).join('\n');
 
 test('single canonical entrypoint is used', () => {
   assert.equal(fs.existsSync('src/main.tsx'), false);
@@ -149,7 +162,7 @@ test('long chat paragraphs are justified and response headings are large', () =>
 test('profile upload appears in both avatar buttons with authenticated storage', () => {
   const shell = read('src/ui/PremiumShell.tsx');
   const profile = read('src/ui/ProfilePhotoMenu.tsx');
-  const sql = read('supabase/setup/chatmi-avatar-storage.sql');
+  const sql = read('supabase/migrations/202610260005_chatmi_avatar_storage.sql');
 
   assert.match(shell, /<ProfilePhotoMenu position="rail"/);
   assert.match(shell, /<ProfilePhotoMenu position="top"/);
@@ -318,7 +331,7 @@ test('applicant tutor is a dedicated chat and voice mode with private persistent
   const shell = read('src/ui/PremiumShell.tsx');
   const app = read('src/App.tsx');
   const tutor = read('src/components/ApplicantTutorChat.tsx');
-  const sql = read('supabase/setup/chatmi-applicant-tutor.sql');
+  const sql = read('supabase/migrations/202610260001_chatmi_applicant_tutor.sql');
 
   assert.match(shell, /emit\('chatmi:navigate', 'tutor'\)/);
   assert.match(shell, /activeMode === 'tutor'/);
@@ -384,7 +397,7 @@ test('tutor chat deep links and persistent case navigation survive reloads', () 
 test('only owners can request permanent deletion of a private case and stored documents', () => {
   const api = read('api/applicant-tutor.ts');
   const workspace = read('src/components/ApplicantTutorWorkspace.tsx');
-  const schema = read('supabase/setup/chatmi-applicant-tutor.sql');
+  const schema = read('supabase/migrations/202610260001_chatmi_applicant_tutor.sql');
   assert.match(api, /action === 'delete_case'/);
   assert.match(api, /target\.owner_id !== auth\.user\.id/);
   assert.match(api, /confirmation !== target\.applicant_name/);
@@ -400,7 +413,7 @@ test('only owners can request permanent deletion of a private case and stored do
 });
 
 test('RAG searches only RLS-authorized chunks and keeps raw-PDF fallback', () => {
-  const sql = read('supabase/setup/chatmi-applicant-tutor-rag.sql');
+  const sql = read('supabase/migrations/202610260003_chatmi_applicant_tutor_rag.sql');
   const index = read('api/applicant-index.ts');
   const tutor = read('src/components/ApplicantTutorChat.tsx');
   const api = read('api/gemini.ts');
@@ -437,7 +450,7 @@ test('Tutor gives exactly the requested fact without unsolicited sources in Chat
   assert.match(api, /value\.trim\(\) \|\| null/);
 
   const start = tutor.indexOf('function exactFactReply(');
-  const stop = tutor.indexOf('\nexport default function ApplicantTutorChat()', start);
+  const stop = tutor.indexOf('\n}\n', start) + 2;
   assert.ok(start !== -1 && stop > start, 'extract exactFactReply for behavioral tests');
   const func = tutor.slice(start, stop).replace(
     'question: string, response: string): string',
@@ -468,7 +481,7 @@ test('Tutor gives exactly the requested fact without unsolicited sources in Chat
 
 test('tutor fast-fact router uses ONLY verified case facts before Gemini', () => {
   const facts = read('lib/tutor/facts.ts');
-  const sql = read('supabase/setup/chatmi-applicant-tutor-facts.sql');
+  const sql = read('supabase/migrations/202610260002_chatmi_applicant_tutor_facts.sql');
   const api = read('api/gemini.ts');
   const index = read('api/applicant-index.ts');
   const ui = read('src/components/ApplicantTutorChat.tsx');
@@ -716,7 +729,7 @@ test('document-backed interview starts only when prepared; voice cannot silently
   assert.match(ui,/la preparación puede consumir tu cuota de Gemini/);
   assert.match(ui,/if\s*\(!caseId \|\| !simulatorRef\.current\)/);
   assert.match(ui,/if\(active\) readAnswerAloud\(active\.questions\[active\.index\]\.question,caseId\)/);
-  assert.match(ui,/disabled=\{!caseId \|\| !simulator \|\| loading\}/);
+  assert.match(ui,/disabled=\{!caseId \|\| !simulatorActive \|\| loading\}/);
   assert.match(ui,/No escuché tu respuesta/);
   assert.doesNotMatch(ui,/No detecté una pregunta\./);
   assert.match(ui,/successes > 0 && !simulatorRef\.current\) void refreshCase\(caseId\)/);

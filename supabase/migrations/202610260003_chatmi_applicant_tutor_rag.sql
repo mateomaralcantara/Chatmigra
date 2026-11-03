@@ -1,5 +1,5 @@
 -- ChatMi: private, lexical RAG for the applicant Tutor.
--- Run AFTER supabase/setup/chatmi-applicant-tutor.sql in ChatMi's own project.
+-- Run AFTER supabase/migrations/202610260001_chatmi_applicant_tutor.sql in ChatMi's own project.
 -- Existing chat, files, users, and documents are preserved.
 create table if not exists public.applicant_case_document_chunks (
   id uuid primary key default gen_random_uuid(),

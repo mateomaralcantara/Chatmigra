@@ -87,7 +87,7 @@ export default async function handler(
     );
 
     const raw = await response.text();
-    const data = raw ? (JSON.parse(raw) as any) : {};
+    const data: { name?: unknown } = raw ? JSON.parse(raw) : {};
 
     if (!response.ok || typeof data?.name !== 'string') {
       return res.status(response.ok ? 502 : response.status).json({

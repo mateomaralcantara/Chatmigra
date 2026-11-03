@@ -148,7 +148,7 @@ input {
   min-width: 0;
   height: 100dvh;
   display: grid;
-  grid-template-rows: var(--cm-top) minmax(0, 1fr);
+  grid-template-rows: var(--cm-top) minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
@@ -1695,3 +1695,35 @@ input {
 }
 .cm-tutor-simulator-alerts summary {font-weight: 700;cursor:pointer;}
 .cm-tutor-simulator-alerts p {margin: 6px 0;line-height: 1.45;}
+
+/* Aviso legal permanente (src/ui/LegalNotice.tsx). */
+.cm-legal-notice {
+  padding: 6px 16px;
+  border-top: 1px solid var(--cm-border);
+  background: var(--cm-page);
+  color: var(--cm-text);
+  font-size: 11.5px;
+  line-height: 1.4;
+  text-align: center;
+  opacity: 0.85;
+}
+
+/* Pantalla de recuperación (src/ui/ErrorBoundary.tsx). */
+.cm-error-boundary {
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  font-family: system-ui, sans-serif;
+}
+.cm-error-boundary button {
+  justify-self: center;
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 0;
+  background: #4f46e5;
+  color: #fff;
+  cursor: pointer;
+}

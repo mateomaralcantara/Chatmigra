@@ -1,9 +1,9 @@
 // DB family: invariants every SQL file under supabase/ must keep.
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const DIRS = ['supabase/migrations', 'supabase/setup'];
+const DIRS = ['supabase/migrations'];
 const files = DIRS.flatMap((dir) =>
   readdirSync(dir)
     .filter((f) => f.endsWith('.sql'))
@@ -36,6 +36,25 @@ describe('Supabase SQL', () => {
 
   it('never grants table access to the anonymous role', () => {
     expect(allSql).not.toMatch(/grant\s+[^;]*\s+on\s+(?:table\s+)?public\.\w+\s+to\s+anon\b/i);
+  });
+
+  it.each(files.map((f) => [f.path, f.sql]))('%s can be re-run safely (idempotent)', (_path, sql) => {
+    expect(sql).not.toMatch(/create\s+table\s+(?!if\s+not\s+exists)/i);
+    expect(sql).not.toMatch(/create\s+(?:unique\s+)?index\s+(?!if\s+not\s+exists)/i);
+    const policies = [...sql.matchAll(/create\s+policy\s+("?[\w]+"?)\s+on\s+([\w.]+)/gi)];
+    for (const [, name, table] of policies) {
+      const drop = new RegExp(`drop\\s+policy\\s+if\\s+exists\\s+${name.replace(/"/g, '"?')}\\s+on\\s+${table.replace('.', '\\.')}`, 'i');
+      // Either an explicit drop, or a pg_policies cleanup loop naming the table.
+      const bareTable = table.replace(/^public\./, '');
+      const cleanedByLoop = /from\s+pg_policies/i.test(sql) && sql.includes(`'${bareTable}'`);
+      if (!cleanedByLoop) {
+        expect(sql, `policy ${name} on ${table} must be dropped first`).toMatch(drop);
+      }
+    }
+  });
+
+  it('there is no separate setup folder: every SQL file is a migration', () => {
+    expect(existsSync('supabase/setup')).toBe(false);
   });
 
   it('never disables row level security', () => {

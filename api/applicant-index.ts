@@ -1,3 +1,4 @@
+import { candidateText, type GeminiResponse } from '../server/gemini-response';
 import { rejectIfRateLimited } from '../server/http';
 import { readServerEnv } from '../server/env';
 import { extractCaseFactCandidates } from '../lib/tutor/facts';
@@ -165,9 +166,8 @@ export default async function handler(req: Request, res: Response) {
       })
     });
     if (!generated.ok) throw new Error('INDEX_MODEL_HTTP_'+generated.status);
-    const json: any = await generated.json();
-    const output = Array.isArray(json?.candidates?.[0]?.content?.parts)
-      ? json.candidates[0].content.parts.map((p: any)=>typeof p?.text==='string'?p.text:'').join('').trim() : '';
+    const json = (await generated.json()) as GeminiResponse;
+    const output = candidateText(json?.candidates?.[0]).trim();
     const finishReason = json?.candidates?.[0]?.finishReason;
     const usage = Number(json?.usageMetadata?.totalTokenCount||0);
     // A cut extraction must not be indexed as though it covered the whole PDF.

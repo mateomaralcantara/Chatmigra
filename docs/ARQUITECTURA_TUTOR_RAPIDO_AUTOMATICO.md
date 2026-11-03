@@ -74,7 +74,7 @@ tiempo real requeriría una integración distinta; no equivale al Gemini Live ge
 
 ## P1 implementado en la rama (activación pendiente)
 
-- \`supabase/setup/chatmi-applicant-tutor-facts.sql\`: tabla privada de hechos y
+- \`supabase/migrations/202610260002_chatmi_applicant_tutor_facts.sql\`: tabla privada de hechos y
   permisos RLS. Requiere instalación manual en el Supabase **de ChatMi**.
 - \`lib/tutor/facts.ts\`: identifica preguntas sobre un único campo y
   extrae **candidatos**, nunca valores aceptados automáticamente.
@@ -95,7 +95,7 @@ La cola duradera y la automatización opt-in pertenecen a P2.
 ### Activación P1
 
 1. Ejecuta SQL del Tutor base y de RAG si aún no estaban instalados.
-2. Ejecuta \`supabase/setup/chatmi-applicant-tutor-facts.sql\` en el
+2. Ejecuta \`supabase/migrations/202610260002_chatmi_applicant_tutor_facts.sql\` en el
    **mismo** proyecto que ChatMi. No lo ejecutes en otras aplicaciones.
 3. \`npm run check\` y prueba dos expedientes con usuarios distintos.
 4. En Tutor → Documentos → ⚡ Preparar búsqueda rápida, indexa el documento.
@@ -111,7 +111,7 @@ La cola duradera y la automatización opt-in pertenecen a P2.
 ### P0: asegurar estado existente
 - `npm run check` verde; validar SSE hasta el evento `done`.
 - Validar `streamGenerateContent` y flags `STOP/MAX_TOKENS`.
-- Confirmar SQL `chatmi-applicant-tutor-rag.sql` en proyecto ChatMi correcto.
+- Confirmar SQL `supabase/migrations/202610260003_chatmi_applicant_tutor_rag.sql` en proyecto ChatMi correcto.
 - Probar RLS: un usuario de caso A no accede a B.
 - Registrar sin PII `server_ms, retrieval_ms, model_ttft_ms, model_total_ms`.
 
@@ -149,7 +149,7 @@ La cola duradera y la automatización opt-in pertenecen a P2.
 - `api/gemini.ts`: perfil + RAG con fallback + streaming y cuotas.
 - `api/applicant-index.ts`: preparación manual autentificada.
 - `src/components/ApplicantTutorChat.tsx`: dos modalidades y documentos.
-- `supabase/setup/chatmi-applicant-tutor-rag.sql`: índice de fragmentos con RLS.
+- `supabase/migrations/202610260003_chatmi_applicant_tutor_rag.sql`: índice de fragmentos con RLS.
 - `scripts/chatmi-core.test.mjs`: regresiones.
 
 ## Seguridad indispensable

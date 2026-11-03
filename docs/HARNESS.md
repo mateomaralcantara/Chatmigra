@@ -5,16 +5,21 @@ y en GitHub Actions (`.github/workflows/ci.yml`). Si un paso falla, los
 siguientes no se ejecutan y el cambio no se publica.
 
 ```
-lint ─► typecheck ─► guards ─► unit ─► contract ─► db ─► flows ─► build
+lint (0 advertencias) ─► typecheck ─► guards ─► unit ─► contract ─► db ─► flows ─► build ─► e2e
 ```
+
+`npm run check` ejecuta todo menos `e2e`; `npm run check:full` incluye también
+el navegador real. En GitHub Actions, `e2e` es un segundo job que solo corre si
+el primero pasó.
 
 | Familia | Carpeta | Comando | Qué garantiza |
 |---|---|---|---|
-| **Guards** | `tests/guards/` | `npm run test:guards` | Reglas de arquitectura ya acordadas: Gemini solo en el servidor, un único punto de entrada, cuotas que fallan cerradas, Tutor privado por expediente, Práctica Amable. Lee el código fuente sin ejecutarlo. |
-| **Unit** | `tests/unit/` | `npm run test:unit` | Funciones puras: lectura segura del body JSON, límite de peticiones, validación de la captura de PayPal, ruta rápida de datos del Tutor, avance y reanudación de la Práctica Amable. |
+| **Guards** | `tests/guards/` | `npm run test:guards` | Reglas de arquitectura ya acordadas: Gemini solo en el servidor, un único punto de entrada, cuotas que fallan cerradas, Tutor privado por expediente, Práctica Amable, aviso legal visible en todas las pantallas, pantalla de recuperación ante errores, monitoreo sin datos personales y tamaño máximo de las pantallas grandes. Lee el código fuente sin ejecutarlo; los componentes divididos en carpetas se leen como una sola unidad. |
+| **Unit** | `tests/unit/` | `npm run test:unit` | Funciones puras: lectura segura del body JSON, límite de peticiones, validación de la captura de PayPal, ruta rápida de datos del Tutor, avance y reanudación de la Práctica Amable, filtrado de credenciales antes de enviar errores al monitoreo. |
 | **Contract** | `tests/contract/` | `npm run test:contract` | Cada ruta de `api/` responde siempre en el mismo orden: método incorrecto → 405, sin sesión o token falso → 401, exceso de peticiones → 429 sin llamar a Gemini, PayPal ni Google. Los códigos de PayPal (400/402/422/502/503) que la pantalla de pago espera. |
-| **DB** | `tests/db/` | `npm run test:db` | Todas las tablas `public.*` de `supabase/` tienen RLS, ninguna da acceso al rol `anon`, las migraciones están ordenadas y un pago de PayPal solo puede registrarse una vez. |
+| **DB** | `tests/db/` | `npm run test:db` | Todas las tablas `public.*` tienen RLS, ninguna da acceso al rol `anon`, las migraciones están ordenadas, **cada migración se puede ejecutar dos veces sin romper nada** y un pago de PayPal solo puede registrarse una vez. |
 | **Flows** | `tests/flows/` | `npm run test:flows` | El recorrido completo de compra Premium, incluidos doble clic, caída de la base de datos después del cobro y reintento, fallo del registro contable y mejora de una suscripción gratuita. |
+| **E2E** | `tests/e2e/` | `npm run test:e2e` | El build de producción en Chromium real, en escritorio y en móvil: login correcto e incorrecto, aviso legal, sin desplazamiento horizontal, pregunta y respuesta del chat, mensaje claro ante el límite de peticiones y voz reservada a Premium. Supabase y `/api` se simulan en `tests/e2e/fixtures.ts`; ninguna petición sale a internet. |
 
 ## Kit compartido (`tests/harness/`)
 
@@ -23,6 +28,9 @@ lint ─► typecheck ─► guards ─► unit ─► contract ─► db ─►
   únicas y fallos simulados con `backend.failures.set('tabla:operacion', 'mensaje')`).
 - `supabase-module.ts`: sustituto de `server/supabase.ts`; se activa con
   `vi.mock('../../server/supabase', () => import('../harness/supabase-module'))`.
+- `tests/e2e/fixtures.ts`: el mismo enfoque para el navegador (Supabase y `/api`
+  interceptados por Playwright; se construye con `.env.e2e`, que solo tiene
+  valores falsos).
 - `paypal.ts`: un `fetch` falso que se comporta como PayPal Orders v2 (crear,
   capturar, `ORDER_ALREADY_CAPTURED`, consultar). Cualquier URL desconocida
   falla, así que ninguna prueba sale a internet.

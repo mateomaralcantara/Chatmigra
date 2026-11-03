@@ -1,83 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { supabase } from '../services/supabaseClient';
 import { naturalSpanishSpeech } from '../../lib/tutor/interview';
 import GentlePractice from './GentlePractice';
 import { GENTLE_FINISHED, GENTLE_PAUSED, GENTLE_RESUMED, GENTLE_WELCOME } from '../../lib/tutor/gentlePractice';
 import { CONSULAR_SKILLS, evaluateConsularAnswer, resumeConsularInterview, CONSULAR_FINISHED, type PreparedQuestion } from '../../lib/tutor/consularSkills';
-
-type CaseRow = { id: string; applicant_name: string; owner_id: string; nationality: string; destination: string; visa_type: string };
-type SimulatorRun = { questions: PreparedQuestion[]; index:number; attempts:number; alerts:string[]; excluded:string[]; unindexed:string[] };
-type FactRow = { id:string; fact_key:string; fact_value:string; document_id:string|null; verification_status:'pending_review'|'verified'|'rejected' };
-type DocRow = { id: string; filename: string; mime_type: string; storage_path: string; created_at: string };
-type MessageRow = { id?: string; role: 'user' | 'model'; content: string; created_at?: string };
-type Mode = 'chat' | 'voice';
-type RecognitionEntry = ArrayLike<{ transcript: string }> & { isFinal?: boolean };
-type RecognitionResult = { results: ArrayLike<RecognitionEntry> };
-type RecognitionEngine = {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  onresult: ((event: RecognitionResult) => void) | null;
-  onerror: ((event: { error?: string }) => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-};
-
-const BUCKET = 'chatmi-applicant-cases';
-const LIMIT = 2 * 1024 * 1024;
-const FILE_TYPES: Record<string, string> = {
-  'application/pdf': 'pdf',
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-};
-const uuidInPath = /^\/tutor\/([0-9a-f-]{36})$/i;
-
-function currentCaseId() {
-  return uuidInPath.exec(window.location.pathname)?.[1] || '';
-}
-function routeToCase(id: string) {
-  const next = id ? '/tutor/' + encodeURIComponent(id) : '/tutor';
-  if (window.location.pathname !== next) window.history.replaceState({}, '', next);
-}
-async function loggedInUser() {
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) throw new Error('Inicia sesión para continuar.');
-  return user;
-}
-function recognitionConstructor(): (new () => RecognitionEngine) | undefined {
-  const w = window as typeof window & {
-    SpeechRecognition?: new () => RecognitionEngine;
-    webkitSpeechRecognition?: new () => RecognitionEngine;
-  };
-  return w.SpeechRecognition || w.webkitSpeechRecognition;
-}
-
-// A short field lookup should never expose Gemini's unsolicited source,
-// heading, or duplicated date translations. Complex questions remain intact.
-function exactFactReply(question: string, response: string): string {
-  const q = question.trim().toLocaleLowerCase('es');
-  const directField = q.length <= 160 &&
-    !/\b(explica|analiza|compara|revisa|evalúa|evalua|resumen|detalla|razones|por qué|requisitos|procedimiento|informe|pasos|lista|varios datos)\b/i.test(q) &&
-    /\b(fecha de nacimiento|nombre(?: completo)?(?: del aplicante| del solicitante)?|nacionalidad|tipo de visa|qué visa|cual visa|cuál visa|país de destino)\b/i.test(q);
-  const raw = response.trim();
-  if (!directField || !raw) return raw;
-  let cleaned = raw.replace(/\s*(?:\*\*)?(?:Fuente|Referencia|Fuentes|Sources)(?:\*\*)?\s*:[\s\S]*$/i, '').trim();
-  if (/no consta|no se encuentra|no se puede determinar|contradic|discrepan/i.test(cleaned)) return cleaned;
-  if (/\bfecha de nacimiento\b/i.test(q)) {
-    const spanishDates = [...cleaned.matchAll(/\b\d{1,2}\s+de\s+[a-záéíóúñ]+\s+de\s+\d{4}\b/gi)];
-    if (spanishDates.length === 1) return spanishDates[0][0];
-    const numericDates = [...cleaned.matchAll(/\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})\b/g)];
-    if (numericDates.length === 1) return numericDates[0][0];
-  }
-  cleaned = cleaned.replace(/^\s*según\s+(?:el perfil(?: del expediente)?|los documentos|el expediente)\s*,?\s*/i, '');
-  cleaned = cleaned.replace(/^(?:la|el|su)\s+(?:fecha de nacimiento(?: de (?:la|el) aplicante)?|nombre(?: completo)?|nacionalidad|tipo de visa|visa solicitada|país de destino)\s*(?:es|corresponde a|:)\s*(?:el\s+|la\s+)?/i, '');
-  cleaned = cleaned.replace(/\s*\(\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}\s*\)\s*\.?$/i, '');
-  return cleaned.trim().replace(/\.$/, '');
-}
+import TutorComposer from './tutor/TutorComposer';
+import TutorDocumentsBar from './tutor/TutorDocumentsBar';
+import TutorMessages from './tutor/TutorMessages';
+import {
+  BUCKET, LIMIT, FILE_TYPES, currentCaseId, routeToCase, loggedInUser, recognitionConstructor, exactFactReply,
+  type CaseRow, type SimulatorRun, type FactRow, type DocRow, type MessageRow, type Mode, type RecognitionEngine,
+} from './tutor/tutorShared';
 
 export default function ApplicantTutorChat() {
   const [mode, setMode] = useState<Mode>('chat');
@@ -924,12 +857,6 @@ export default function ApplicantTutorChat() {
     } finally {setLoading(false);}
   };
 
-  const FACT_LABELS: Record<string,string> = {
-    applicant_name:'Nombre',date_of_birth:'Fecha de nacimiento',
-    nationality:'Nacionalidad',destination:'País de destino',
-    visa_type:'Tipo de visa',passport_number:'Número de pasaporte',
-  };
-
   const toggleDoc = (id: string) => {
     setSelectedDocs(previous => {
       if (previous.includes(id)) return previous.filter(item => item !== id);
@@ -968,40 +895,16 @@ export default function ApplicantTutorChat() {
         </div>
       </header>
 
-      <div className="cm-tutor-chat-scroll" aria-live="polite">
-        {!messages.length && (
-          <div className="cm-tutor-chat-welcome">
-            <h1>{caseId ? 'Simulacro consular dirigido por tu Tutor' : 'Tutor Migratorio Personal'}</h1>
-            <p>{caseId ? 'La práctica tranquila comienza automáticamente; puedes volver aquí para elegir el simulacro documental.' : 'Preparando una práctica privada. No necesitas subir documentos.'}</p>
-          </div>
-        )}
-        <div className="cm-tutor-chat-messages">
-          {previousMessages.length>0 && (
-            <details className="cm-tutor-previous">
-              <summary>Historial anterior ({previousMessages.length}) — separado del simulacro</summary>
-              <div className="cm-tutor-previous-messages">
-                {previousMessages.map((item,index)=>(
-                  <div key={item.id||index} className={'cm-tutor-chat-bubble '+(item.role==='user'?'is-user':'is-model')}>
-                    <strong>{item.role==='user'?'Tú':'Tutor anterior'}</strong>
-                    <p>{item.content}</p>
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
-          {olderAvailable && <button type="button" className="cm-tutor-older" onClick={() => void loadOlder()} disabled={loading}>Cargar mensajes anteriores</button>}
-          {messages.map((item, index) =>
-            <div key={item.id || index} className={'cm-tutor-chat-bubble ' + (item.role === 'user' ? 'is-user' : 'is-model')}>
-              <span className="cm-tutor-chat-role">{item.role === 'user' ? 'Tú' : 'Tutor IA'}</span>
-              {item.role === 'model'
-                ? <div className="cm-tutor-chat-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{item.content}</ReactMarkdown></div>
-                : <p>{item.content}</p>}
-            </div>
-          )}
-          {loading && <p className="cm-tutor-chat-thinking" role="status">{simulator ? 'Evaluando tu respuesta…' : 'Consultando expediente…'}</p>}
-          <div ref={endRef} />
-        </div>
-      </div>
+      <TutorMessages
+        caseId={caseId}
+        messages={messages}
+        previousMessages={previousMessages}
+        olderAvailable={olderAvailable}
+        loading={loading}
+        simulatorActive={Boolean(simulator)}
+        onLoadOlder={() => void loadOlder()}
+        endRef={endRef}
+      />
 
       <div className="cm-tutor-chat-bottom">
         <div className="cm-tutor-interview-bar">
@@ -1027,80 +930,42 @@ export default function ApplicantTutorChat() {
             Continuar respuesta
           </button>
         )}
-        <div className="cm-tutor-documents-bar">
-          <input ref={fileRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" className="cm-expediente-file-input" onChange={event => void uploadDocument(event)} disabled={!caseId || loading} aria-label="Subir documentos al expediente" />
-          <button type="button" className="cm-tutor-upload" onClick={() => fileRef.current?.click()} disabled={!caseId || loading}>＋ Subir documentos</button>
-          <button type="button" className="cm-tutor-upload" onClick={() => void startSimulator()}
-            disabled={!caseId || !docs.length || loading || Boolean(simulator) || !indexedIds.length}>
-            🎓 Iniciar simulacro ({CONSULAR_SKILLS.length} módulos)
-          </button>
-          {simulator && <button type="button" className="cm-tutor-upload"
-            onClick={stopSimulator}>Terminar simulacro</button>}
-          <button type="button" className="cm-tutor-upload" onClick={() => void prepareFastSearch()}
-            disabled={!caseId || loading || selectedDocs.every(id => indexedIds.includes(id)) || !selectedDocs.length}
-            title="Prepara los documentos seleccionados con Gemini (puede consumir tu cuota) e inicia las preguntas">
-            ⚡ Preparar y comenzar simulacro
-          </button>
-          <details className="cm-tutor-documents">
-            <summary>Documentos ({docs.length}) · {selectedDocs.length} seleccionados</summary>
-            <div className="cm-tutor-document-list">
-              {docs.length ? docs.map(doc => <label key={doc.id}>
-                <input type="checkbox" checked={selectedDocs.includes(doc.id)} onChange={() => toggleDoc(doc.id)} disabled={loading} />
-                <span title={doc.filename}>{doc.filename} {indexedIds.includes(doc.id) ? '✓ listo' : ''}</span>
-              </label>) : <p>No hay documentos todavía.</p>}
-            </div>
-          </details>
-          {facts.length > 0 && (
-            <details className="cm-tutor-documents cm-tutor-facts">
-              <summary>Datos del expediente ({facts.filter(f=>f.verification_status==='pending_review').length} por verificar)</summary>
-              <div className="cm-tutor-fact-list">
-                {facts.map(fact=>(
-                  <div className="cm-tutor-fact-row" key={fact.id}>
-                    <div>
-                      <strong>{FACT_LABELS[fact.fact_key] || fact.fact_key}:</strong> {fact.fact_value}
-                      <small> · {fact.verification_status==='verified'?'Verificado':fact.verification_status==='rejected'?'Rechazado':'Pendiente de verificación'}</small>
-                    </div>
-                    {fact.verification_status==='pending_review' &&
-                      cases.find(c=>c.id===caseId)?.owner_id===currentUserId && (
-                      <div className="cm-tutor-fact-actions">
-                        <button type="button" disabled={loading} onClick={()=>void reviewFact(fact,true)}>Confirmar</button>
-                        <button type="button" disabled={loading} onClick={()=>void reviewFact(fact,false)}>Rechazar</button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
-          <span className="cm-tutor-format">PDF o imagen · 2 MB máximo por archivo</span>
-        </div>
+        <TutorDocumentsBar
+          caseId={caseId}
+          loading={loading}
+          simulatorActive={Boolean(simulator)}
+          docs={docs}
+          indexedIds={indexedIds}
+          selectedDocs={selectedDocs}
+          facts={facts}
+          canReviewFacts={cases.find(c=>c.id===caseId)?.owner_id===currentUserId}
+          fileRef={fileRef}
+          onUpload={event => void uploadDocument(event)}
+          onStartSimulator={() => void startSimulator()}
+          onStopSimulator={stopSimulator}
+          onPrepare={() => void prepareFastSearch()}
+          onToggleDoc={toggleDoc}
+          onReviewFact={(fact, approve) => void reviewFact(fact, approve)}
+        />
 
-        {mode === 'chat' ? (
-          <form className="cm-composer cm-tutor-composer" onSubmit={send}>
-            <button type="button" className="cm-composer-plus" aria-label="Subir documentos" title="Subir documentos" onClick={() => fileRef.current?.click()} disabled={!caseId || loading}>+</button>
-            <textarea aria-label={simulator ? 'Responder al entrevistador' : 'Preguntar sobre los documentos'} rows={1} value={question} disabled={!caseId || loading}
-              onChange={event => setQuestion(event.target.value)}
-              onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if (question.trim()) void askQuestion(question, false); } }}
-              placeholder={simulator ? 'Responde la pregunta del entrevistador…' : 'Consulta sobre los documentos del expediente…'} />
-            <div className="cm-composer-actions">
-              <span className="cm-model-chip">{simulator ? 'Evaluación + repregunta' : 'Gemini / RAG'}</span>
-              <button type="button" className="cm-composer-mic" aria-label="Ir a Voz" title="Conversación por voz" onClick={() => switchMode('voice')}>♫</button>
-              <button type="submit" className="cm-composer-send" aria-label="Enviar respuesta" disabled={loading || !question.trim() || (!simulator && !selectedDocs.length)}>↑</button>
-            </div>
-          </form>
-        ) : (
-          <div className="cm-tutor-voice-panel">
-            <button type="button" className={'cm-tutor-voice-button ' + (listening ? 'is-listening' : '')} aria-pressed={voiceOn}
-              onClick={toggleVoice} disabled={!caseId || !simulator || loading}>
-              {voiceOn ? '■ Detener voz' : '🎙 Iniciar voz'}
-            </button>
-            <div aria-live="polite">
-              {speaking ? 'El Tutor está haciendo su pregunta…' : listening ? 'Escuchando tu respuesta…' : voiceOn ? 'Preparando la siguiente pregunta…' : simulator ? 'Pulsa Iniciar voz: el Tutor hablará primero.' : 'Prepara los documentos e inicia el simulacro para activar Voz.'}
-            </div>
-            {transcript && <p className="cm-tutor-voice-transcript">Escuché: {transcript}</p>}
-            <small>El Tutor dirige la entrevista. La voz depende del navegador y no requiere Gemini para las preguntas guiadas.</small>
-          </div>
-        )}
+        <TutorComposer
+          mode={mode}
+          caseId={caseId}
+          loading={loading}
+          simulatorActive={Boolean(simulator)}
+          question={question}
+          canSend={Boolean(simulator) || selectedDocs.length > 0}
+          listening={listening}
+          speaking={speaking}
+          voiceOn={voiceOn}
+          transcript={transcript}
+          onQuestionChange={setQuestion}
+          onSubmit={send}
+          onAsk={text => void askQuestion(text, false)}
+          onPickFiles={() => fileRef.current?.click()}
+          onSwitchMode={switchMode}
+          onToggleVoice={toggleVoice}
+        />
       </div>
     </section>
   );

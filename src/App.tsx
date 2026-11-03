@@ -7,7 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { type ChatMessage, type Conversation, Plan, type User } from './types';
-import { analyzeMigrationDocument, connectToVoiceAgent, runChatStream } from './services/geminiService';
+import { analyzeMigrationDocument, runChatStream } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 import AccountDashboard from './components/AccountDashboard';
 import ApplicantTutorChat from './components/ApplicantTutorChat';
@@ -17,28 +17,8 @@ import ConversationHistory from './components/ConversationHistory';
 import SuggestedPrompts from './components/SuggestedPrompts';
 import VoiceAgentOverlay from './components/VoiceAgentOverlay';
 import { logActivity } from './services/activityService';
-
-type View = 'chat' | 'dashboard' | 'tutor';
-
-function viewFromPath(path: string): View {
-  if (path === '/tutor' || path.startsWith('/tutor/')) return 'tutor';
-  if (path === '/work') return 'dashboard';
-  return 'chat';
-}
-
-function pathForView(view: View): string {
-  return view === 'tutor' ? '/tutor' : view === 'dashboard' ? '/work' : '/';
-}
-type AgentStatus = 'idle' | 'connecting' | 'listening' | 'speaking' | 'error';
-
-interface VoiceSession {
-  close: () => void;
-}
-
-interface LiveTranscription {
-  user: string;
-  model: string;
-}
+import { useVoiceAgent } from './hooks/useVoiceAgent';
+import { pathForView, viewFromPath, type View } from './routing';
 
 interface AppProps {
   user: User;
@@ -78,15 +58,6 @@ const App: React.FC<AppProps> = ({
   const [focusPremium, setFocusPremium] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-  const [isVoiceAgentActive, setIsVoiceAgentActive] = useState(false);
-  const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle');
-  const [liveTranscription, setLiveTranscription] =
-    useState<LiveTranscription>({ user: '', model: '' });
-
-  const sessionRef = useRef<VoiceSession | null>(null);
-  const userTranscriptionRef = useRef('');
-  const modelTranscriptionRef = useRef('');
-
   useEffect(() => {
     setCurrentPlan(plan);
   }, [plan]);
@@ -102,7 +73,7 @@ const App: React.FC<AppProps> = ({
         ? previous.slice(0, -1)
         : previous;
     });
-  }, [user.email]);
+  }, []);
 
   const appendModelChunk = useCallback((text: string) => {
     setMessages((previous) => {
@@ -141,7 +112,7 @@ const App: React.FC<AppProps> = ({
       console.warn('[conversations] Historial omitido:', caught);
       setConversations([]);
     }
-  }, []);
+  }, [user.email]);
 
   useEffect(() => {
     if (currentView === 'chat') {
@@ -417,93 +388,20 @@ const App: React.FC<AppProps> = ({
     [isLoading],
   );
 
-  const stopVoiceAgent = useCallback(
-    async (sendTranscript: boolean) => {
-      setAgentStatus('idle');
-      setIsVoiceAgentActive(false);
-      sessionRef.current?.close();
-      sessionRef.current = null;
-
-      if (sendTranscript) {
-        const userText = userTranscriptionRef.current.trim();
-        const modelText = modelTranscriptionRef.current.trim();
-
-        if (userText || modelText) {
-          await handleSendMessage(
-            `Transcripción de voz\n\nTú: ${userText}\n\nChatMi: ${modelText}`,
-          );
-        }
-      }
-
-      userTranscriptionRef.current = '';
-      modelTranscriptionRef.current = '';
-      setLiveTranscription({ user: '', model: '' });
-    },
-    [handleSendMessage],
-  );
-
-  const toggleVoiceAgent = useCallback(async () => {
-    if (currentPlan === Plan.FREE) {
-      setError('La conversación por voz está disponible en Premium.');
+  const {
+    isActive: isVoiceAgentActive,
+    status: agentStatus,
+    liveTranscription,
+    toggle: toggleVoiceAgent,
+  } = useVoiceAgent({
+    plan: currentPlan,
+    onTranscript: handleSendMessage,
+    onError: setError,
+    onPremiumRequired: () => {
       setFocusPremium(true);
       setCurrentView('dashboard');
-      return;
-    }
-
-    if (isVoiceAgentActive) {
-      await stopVoiceAgent(true);
-      return;
-    }
-
-    try {
-      setAgentStatus('connecting');
-      setIsVoiceAgentActive(true);
-
-      const session = await connectToVoiceAgent(
-        {
-          onOpen: () => setAgentStatus('listening'),
-          onUserTranscription: (text) => {
-            userTranscriptionRef.current += text;
-            setLiveTranscription((previous) => ({
-              ...previous,
-              user: userTranscriptionRef.current,
-            }));
-          },
-          onModelTranscription: (text) => {
-            modelTranscriptionRef.current += text;
-            setLiveTranscription((previous) => ({
-              ...previous,
-              model: modelTranscriptionRef.current,
-            }));
-          },
-          onModelSpeaking: (speaking) =>
-            setAgentStatus(speaking ? 'speaking' : 'listening'),
-          onTurnComplete: () => undefined,
-          onError: (voiceError) => {
-            console.error('[voice]', voiceError);
-            setError('La conversación por voz encontró un error.');
-            setAgentStatus('error');
-          },
-          onClose: () => {
-            setAgentStatus('idle');
-            setIsVoiceAgentActive(false);
-          },
-        },
-        currentPlan,
-      );
-
-      sessionRef.current = session as VoiceSession;
-    } catch (caught) {
-      console.error('[voice] inicio falló:', caught);
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : 'No se pudo iniciar la conversación por voz.',
-      );
-      setIsVoiceAgentActive(false);
-      setAgentStatus('error');
-    }
-  }, [currentPlan, isVoiceAgentActive, stopVoiceAgent]);
+    },
+  });
 
   const goToPremiumPlan = useCallback(() => {
     setCurrentView('dashboard');

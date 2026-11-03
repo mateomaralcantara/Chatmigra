@@ -5,7 +5,7 @@ import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'node_modules/**', '.vercel/**', 'coverage/**', 'scripts/**'] },
+  { ignores: ['dist/**', 'node_modules/**', '.vercel/**', 'coverage/**', 'scripts/**', 'test-results/**', 'playwright-report/**'] },
   js.configs.recommended,
   {
     files: ['**/*.{js,cjs,mjs}'],
@@ -38,5 +38,10 @@ export default tseslint.config(
   {
     files: ['tests/**/*.ts'],
     rules: { '@typescript-eslint/no-explicit-any': 'off' },
+  },
+  {
+    // Playwright fixtures call `use(...)`, which is not a React hook.
+    files: ['tests/e2e/**/*.ts'],
+    rules: { 'react-hooks/rules-of-hooks': 'off' },
   },
 );

@@ -1,5 +1,5 @@
 -- ChatMi · memoria estructurada y verificada (Tutor fast facts).
--- Ejecutar DESPUÉS de chatmi-applicant-tutor.sql en el proyecto ChatMi.
+-- Ejecutar DESPUÉS de supabase/migrations/202610260001_chatmi_applicant_tutor.sql en el proyecto ChatMi.
 -- No elimina ni reescribe documentos, historiales o expedientes existentes.
 
 create table if not exists public.applicant_case_facts (

@@ -6,60 +6,22 @@ import React, {
 } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { User } from '../types';
+import {
+  createEmptyUserRow,
+  type AdminOverview,
+  type AdminUserRow,
+  type PaymentRow,
+  type SubscriptionRow,
+} from './admin/adminTypes';
+import AdminMetrics from './admin/AdminMetrics';
+import AdminPaymentsTable from './admin/AdminPaymentsTable';
+import AdminSubscriptionsTable from './admin/AdminSubscriptionsTable';
 
 const ADMIN_EMAIL = 'madmin@chatmig.com';
 
 interface AdminDashboardProps {
   user: User;
 }
-
-// Tablas base
-interface SubscriptionRow {
-  id: string;
-  user_email: string;
-  provider: string;
-  provider_subscription_id: string | null;
-  plan: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface PaymentRow {
-  id: string;
-  user_email: string;
-  provider: string;
-  provider_subscription_id: string | null;
-  amount: number;
-  currency: string;
-  status: string;
-  created_at: string;
-}
-
-// Métricas generales
-interface AdminOverview {
-  totalRevenue: number;
-  totalPayments: number;
-  activePremium: number;
-  totalConversations: number;
-}
-
-// Agregado por usuario
-interface AdminUserRow {
-  email: string;
-  currentPlan: string | null;
-  lastActivity: string | null;
-  totalPayments: number;
-  totalPaidUsd: number;
-}
-
-const createEmptyUserRow = (email: string): AdminUserRow => ({
-  email,
-  currentPlan: null,
-  lastActivity: null,
-  totalPayments: 0,
-  totalPaidUsd: 0,
-});
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
@@ -569,228 +531,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
           </p>
         </div>
 
-        {/* Métricas principales */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-neutral-900 rounded-xl shadow border border-gray-800 p-4">
-            <p className="text-xs uppercase text-gray-400 mb-1">
-              Ingresos totales
-            </p>
-            <p className="text-2xl font-bold">
-              {overview
-                ? `$${overview.totalRevenue.toFixed(2)} USD`
-                : '—'}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              Basado en pagos con estado{' '}
-              <span className="font-semibold">paid</span> y moneda
-              USD.
-            </p>
-          </div>
+        <AdminMetrics overview={overview} />
 
-          <div className="bg-neutral-900 rounded-xl shadow border border-gray-800 p-4">
-            <p className="text-xs uppercase text-gray-400 mb-1">
-              Pagos procesados
-            </p>
-            <p className="text-2xl font-bold">
-              {overview ? overview.totalPayments : '—'}
-            </p>
-          </div>
+        <AdminSubscriptionsTable
+          subscriptions={subscriptions}
+          updatingId={updatingId}
+          handleUpdateSubscriptionStatus={handleUpdateSubscriptionStatus}
+        />
 
-          <div className="bg-neutral-900 rounded-xl shadow border border-gray-800 p-4">
-            <p className="text-xs uppercase text-gray-400 mb-1">
-              Usuarios Premium activos
-            </p>
-            <p className="text-2xl font-bold">
-              {overview ? overview.activePremium : '—'}
-            </p>
-          </div>
-
-          <div className="bg-neutral-900 rounded-xl shadow border border-gray-800 p-4">
-            <p className="text-xs uppercase text-gray-400 mb-1">
-              Conversaciones totales
-            </p>
-            <p className="text-2xl font-bold">
-              {overview ? overview.totalConversations : '—'}
-            </p>
-          </div>
-        </div>
-
-        {/* Suscripciones recientes */}
-        <div className="bg-neutral-900 rounded-xl shadow border border-gray-800 p-4">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="font-semibold">Últimas suscripciones</h3>
-            <span className="text-xs text-gray-400">
-              Mostrando {subscriptions.length} registros
-            </span>
-          </div>
-
-          {subscriptions.length === 0 ? (
-            <p className="text-sm text-gray-400">
-              Aún no hay suscripciones.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs text-gray-400 border-b border-gray-800 bg-black/40">
-                  <tr>
-                    <th className="py-2 pr-3">Usuario</th>
-                    <th className="py-2 pr-3">Plan</th>
-                    <th className="py-2 pr-3">Proveedor</th>
-                    <th className="py-2 pr-3">Estado</th>
-                    <th className="py-2 pr-3">Creada</th>
-                    <th className="py-2 pr-3">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {subscriptions.map(sub => (
-                    <tr
-                      key={sub.id}
-                      className="border-b border-gray-800 bg-black/40"
-                    >
-                      <td className="py-2 pr-3">
-                        {sub.user_email}
-                      </td>
-                      <td className="py-2 pr-3 capitalize">
-                        {sub.plan}
-                      </td>
-                      <td className="py-2 pr-3 text-xs">
-                        {sub.provider}
-                        <br />
-                        <span className="text-gray-500">
-                          {sub.provider_subscription_id}
-                        </span>
-                      </td>
-                      <td className="py-2 pr-3">
-                        <span
-                          className={
-                            'px-2 py-0.5 rounded-full text-xs ' +
-                            (sub.status === 'active'
-                              ? 'bg-green-900/40 text-green-300'
-                              : sub.status === 'canceled'
-                              ? 'bg-red-900/40 text-red-300'
-                              : 'bg-gray-800 text-gray-200')
-                          }
-                        >
-                          {sub.status}
-                        </span>
-                      </td>
-                      <td className="py-2 pr-3 text-xs text-gray-400">
-                        {new Date(
-                          sub.created_at
-                        ).toLocaleString()}
-                      </td>
-                      <td className="py-2 pr-3 space-x-2">
-                        {sub.status !== 'active' && (
-                          <button
-                            onClick={() =>
-                              handleUpdateSubscriptionStatus(
-                                sub.id,
-                                'active'
-                              )
-                            }
-                            disabled={updatingId === sub.id}
-                            className="text-xs px-2 py-1 rounded bg-green-600 text-white hover:bg-green-500 disabled:bg-green-900/60"
-                          >
-                            {updatingId === sub.id
-                              ? '...'
-                              : 'Activar'}
-                          </button>
-                        )}
-                        {sub.status !== 'canceled' && (
-                          <button
-                            onClick={() =>
-                              handleUpdateSubscriptionStatus(
-                                sub.id,
-                                'canceled'
-                              )
-                            }
-                            disabled={updatingId === sub.id}
-                            className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900/60"
-                          >
-                            {updatingId === sub.id
-                              ? '...'
-                              : 'Cancelar'}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Pagos recientes */}
-        <div className="bg-neutral-900 rounded-xl shadow border border-gray-800 p-4">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="font-semibold">Pagos recientes</h3>
-            <span className="text-xs text-gray-400">
-              Mostrando {payments.length} registros
-            </span>
-          </div>
-
-          {payments.length === 0 ? (
-            <p className="text-sm text-gray-400">
-              Aún no hay pagos registrados.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs text-gray-400 border-b border-gray-800 bg-black/40">
-                  <tr>
-                    <th className="py-2 pr-3">Usuario</th>
-                    <th className="py-2 pr-3">Monto</th>
-                    <th className="py-2 pr-3">Estado</th>
-                    <th className="py-2 pr-3">Proveedor</th>
-                    <th className="py-2 pr-3">Fecha</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {payments.map(pay => (
-                    <tr
-                      key={pay.id}
-                      className="border-b border-gray-800 bg-black/40"
-                    >
-                      <td className="py-2 pr-3">
-                        {pay.user_email}
-                      </td>
-                      <td className="py-2 pr-3">
-                        ${pay.amount.toFixed(2)} {pay.currency}
-                      </td>
-                      <td className="py-2 pr-3">
-                        <span
-                          className={
-                            'px-2 py-0.5 rounded-full text-xs ' +
-                            (pay.status === 'paid'
-                              ? 'bg-green-900/40 text-green-300'
-                              : pay.status === 'failed'
-                              ? 'bg-red-900/40 text-red-300'
-                              : 'bg-gray-800 text-gray-200')
-                          }
-                        >
-                          {pay.status}
-                        </span>
-                      </td>
-                      <td className="py-2 pr-3 text-xs">
-                        {pay.provider}
-                        <br />
-                        <span className="text-gray-500">
-                          {pay.provider_subscription_id}
-                        </span>
-                      </td>
-                      <td className="py-2 pr-3 text-xs text-gray-400">
-                        {new Date(
-                          pay.created_at
-                        ).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <AdminPaymentsTable payments={payments} />
       </div>
     </div>
   );

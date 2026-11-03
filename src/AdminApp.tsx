@@ -66,10 +66,11 @@ const AdminApp: React.FC = () => {
         return;
       }
 
+      const metadata = (logged?.user_metadata ?? {}) as { first_name?: string; last_name?: string };
       setAdminUser({
         email: logged!.email!,
-        firstName: (logged!.user_metadata as any)?.first_name || 'Admin',
-        lastName: (logged!.user_metadata as any)?.last_name || '',
+        firstName: metadata.first_name || 'Admin',
+        lastName: metadata.last_name || '',
       });
 
       setView('dashboard');
@@ -124,13 +125,8 @@ const AdminApp: React.FC = () => {
             const stream = await runChatStream(history, Plan.PREMIUM);
             let full = '';
 
-            for await (const chunk of stream as any) {
-              let chunkText = '';
-              if (typeof chunk.text === 'function') {
-                chunkText = chunk.text();
-              } else if (typeof chunk.text === 'string') {
-                chunkText = chunk.text;
-              }
+            for await (const chunk of stream) {
+              const chunkText = typeof chunk.text === 'string' ? chunk.text : '';
 
               if (chunkText) {
                 full += chunkText;
@@ -155,7 +151,7 @@ const AdminApp: React.FC = () => {
                 return prev;
               });
             }
-          } catch (err: any) {
+          } catch (err: unknown) {
             console.error('[AdminApp] chat error:', err);
             const msg =
               err instanceof Error

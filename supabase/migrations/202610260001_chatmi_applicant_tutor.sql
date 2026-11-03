@@ -1,6 +1,5 @@
 -- ChatMi · Tutor Personal del Aplicante
--- INSTALAR POR SEPARADO en SQL Editor del proyecto Supabase ChatMi.
--- NO usar "supabase db push": existe una migración de cuotas pendiente.
+-- Idempotente: se puede ejecutar de nuevo sin perder datos.
 -- Expedientes y documentos PRIVADOS. Autorización: dueño o miembro invitado.
 -- No reemplaza ni modifica el chat general.
 

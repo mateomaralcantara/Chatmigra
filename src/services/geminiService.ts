@@ -234,7 +234,7 @@ async function getLiveClient(): Promise<{
 export const connectToVoiceAgent = async (
   callbacks: VoiceAgentCallbacks,
   plan: Plan,
-): Promise<any> => {
+): Promise<{ close: () => void }> => {
   const { client, model } = await getLiveClient();
 
   const AudioContextCtor =
