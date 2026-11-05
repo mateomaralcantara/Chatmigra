@@ -920,7 +920,7 @@ test('Práctica amable proceeds directly after accepted response without fixed 1
   const ui=read('src/components/GentlePractice.tsx');
   const engine=read('lib/tutor/gentlePractice.ts');
   const send=ui.slice(ui.indexOf('const submitAnswer='),ui.indexOf('const begin='));
-  assert.match(send,/const prompt=next<GENTLE_QUESTIONS\.length\?GENTLE_QUESTIONS\[next\]\.text:GENTLE_FINISHED/);
+  assert.match(send,/const prompt=next<questions\.length\?questions\[next\]\.text:practiceSet\.finished/);
   assert.match(send,/await save\(\[/);
   assert.match(send,/\{role:'user',content:text\.slice\(0,12000\)\}/);
   assert.match(send,/\{role:'model',content:prompt\}/);

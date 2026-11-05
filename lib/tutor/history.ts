@@ -1,6 +1,8 @@
 // Pure history helpers for the documentary Tutor (no browser or network).
 import { CONSULAR_SKILLS } from './consularSkills';
-import { GENTLE_FINISHED, GENTLE_PAUSED, GENTLE_RESUMED, GENTLE_WELCOME } from './gentlePractice';
+import {
+  EXTENDED_FINISHED, EXTENDED_WELCOME, GENTLE_FINISHED, GENTLE_PAUSED, GENTLE_RESUMED, GENTLE_WELCOME,
+} from './gentlePractice';
 
 type Turn = { role: 'user' | 'model'; content: string };
 
@@ -15,13 +17,15 @@ export function splitTutorHistory<T extends Turn>(history: T[]) {
   let inGentlePractice = false;
   const documentHistory = history.filter(message => {
     if (message.role === 'model' &&
-      (message.content === GENTLE_WELCOME || message.content === GENTLE_RESUMED)) {
+      (message.content === GENTLE_WELCOME || message.content === EXTENDED_WELCOME ||
+       message.content === GENTLE_RESUMED)) {
       inGentlePractice = true;
       return false;
     }
     if (inGentlePractice) {
       if (message.role === 'model' &&
-        (message.content === GENTLE_FINISHED || message.content === GENTLE_PAUSED)) {
+        (message.content === GENTLE_FINISHED || message.content === EXTENDED_FINISHED ||
+           message.content === GENTLE_PAUSED)) {
         inGentlePractice = false;
       }
       return false;

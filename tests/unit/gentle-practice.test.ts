@@ -109,3 +109,54 @@ describe('splitTutorHistory (simulacro documental)', () => {
     expect(active.map((m) => m.content)).toEqual([CONSULAR_SKILLS[0].question, 'Ana']);
   });
 });
+
+describe('Práctica ampliada (31 preguntas adicionales)', async () => {
+  const { EXTENDED_QUESTIONS, EXTENDED_WELCOME, EXTENDED_FINISHED, nextPracticeIndex } =
+    await import('../../lib/tutor/gentlePractice');
+
+  it('tiene exactamente las 31 preguntas, en orden y en sus 5 bloques', () => {
+    expect(EXTENDED_QUESTIONS).toHaveLength(31);
+    expect(new Set(EXTENDED_QUESTIONS.map((q) => q.id)).size).toBe(31);
+    expect(EXTENDED_QUESTIONS[0].text).toBe('¿Cuál es el nombre oficial del encuentro y dónde se realizará?');
+    expect(EXTENDED_QUESTIONS[30].text).toBe('¿Qué publicaciones o trabajos recientes puede mencionar como ejemplo?');
+    expect([...new Set(EXTENDED_QUESTIONS.map((q) => q.group))]).toEqual([
+      'La actividad y la cobertura', 'El medio o la empresa que le envía', 'El itinerario y el regreso',
+      'El hospedaje y los contactos', 'Su trayectoria y sus viajes',
+    ]);
+    // Ninguna se confunde con las 18 esenciales.
+    const essential = new Set(GENTLE_QUESTIONS.map((q) => q.text));
+    expect(EXTENDED_QUESTIONS.some((q) => essential.has(q.text))).toBe(false);
+  });
+
+  it('el aviso de veracidad está en la bienvenida', () => {
+    expect(EXTENDED_WELCOME).toMatch(/coincidir con el propósito real del viaje y con la categoría de visa solicitada/);
+  });
+
+  it('hace las 31 en orden, sin saltos aunque responda "No"', () => {
+    const history: GentleMessage[] = [model(EXTENDED_WELCOME), model(EXTENDED_QUESTIONS[0].text)];
+    for (let i = 0; i < 31; i++) {
+      const next = nextPracticeIndex('extended', i, 'No');
+      expect(next).toBe(i + 1);
+      history.push(user('No'), model('Gracias.'), model(next < 31 ? EXTENDED_QUESTIONS[next].text : EXTENDED_FINISHED));
+      expect(resumeGentlePractice(history)).toMatchObject({ set: 'extended', index: next, awaiting: next < 31 });
+    }
+    expect(resumeGentlePractice(history)).toMatchObject({ set: 'extended', completed: true, answered: 31 });
+  });
+
+  it('al recargar sigue en la práctica que estaba abierta', () => {
+    const history = [
+      model(GENTLE_WELCOME), model(GENTLE_QUESTIONS[0].text), user('Turismo'),
+      model(EXTENDED_WELCOME), model(EXTENDED_QUESTIONS[0].text), user('Foro de Periodismo, Miami'),
+      model('Gracias.'), model(EXTENDED_QUESTIONS[1].text),
+    ];
+    expect(resumeGentlePractice(history)).toMatchObject({ set: 'extended', index: 1, awaiting: true, answered: 1 });
+  });
+
+  it('el simulacro documental nunca ve los turnos de la práctica ampliada', () => {
+    const { documentHistory } = splitTutorHistory([
+      model(EXTENDED_WELCOME), model(EXTENDED_QUESTIONS[0].text), user('respuesta'), model(EXTENDED_FINISHED),
+      model(CONSULAR_SKILLS[0].question), user('Ana'),
+    ]);
+    expect(documentHistory.map((m) => m.content)).toEqual([CONSULAR_SKILLS[0].question, 'Ana']);
+  });
+});

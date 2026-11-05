@@ -1,7 +1,7 @@
 // E2E family: the Tutor, end to end in a real browser, against an in-memory
 // Supabase that really stores and returns every saved turn.
 import type { Page } from '@playwright/test';
-import { GENTLE_PAUSED, GENTLE_QUESTIONS, GENTLE_WELCOME } from '../../lib/tutor/gentlePractice';
+import { EXTENDED_QUESTIONS, EXTENDED_WELCOME, GENTLE_PAUSED, GENTLE_QUESTIONS, GENTLE_WELCOME } from '../../lib/tutor/gentlePractice';
 import { expect, login, test } from './fixtures';
 import { FakeDb, SPEECH_STUB } from './fake-db';
 
@@ -97,6 +97,47 @@ test.describe('Tutor · Práctica Consular Amable', () => {
     await page.getByRole('button', { name: 'Práctica tranquila' }).click();
     await expect(progressBar(page)).toContainText('Pregunta 2 de 18');
     await expect(practice(page).getByText(GENTLE_QUESTIONS[1].text).last()).toBeVisible();
+    expect(api.pageErrors).toEqual([]);
+  });
+
+  test('práctica ampliada: 31 preguntas, se retoma al recargar y se puede volver a la esencial', async ({ page, api }) => {
+    await openTutor(page);
+    await answer(page, 'Turismo.');
+
+    // Cambiar con una práctica empezada pide confirmación.
+    page.once('dialog', (dialog) => void dialog.accept());
+    await practice(page).getByRole('button', { name: 'Ampliada (31)' }).click();
+
+    await expect(practice(page).getByRole('heading', { name: 'Práctica ampliada' })).toBeVisible();
+    await expect(progressBar(page)).toHaveText('Pregunta 1 de 31 · La actividad y la cobertura');
+    await expect(practice(page).getByText(EXTENDED_QUESTIONS[0].text)).toBeVisible();
+    await expect(practice(page).getByText(/debe coincidir con el propósito real del viaje/).first()).toBeVisible();
+
+    await answer(page, 'Foro Internacional de Periodismo, en Miami.');
+    await answer(page, 'Del 10 al 12 de marzo, de 9 a 5.');
+    await expect(progressBar(page)).toHaveText('Pregunta 3 de 31 · La actividad y la cobertura');
+
+    await page.reload();
+    await expect(progressBar(page)).toHaveText('Pregunta 3 de 31 · La actividad y la cobertura');
+    expect(modelTurns().filter((t) => t === EXTENDED_WELCOME)).toHaveLength(1);
+
+    page.once('dialog', (dialog) => void dialog.accept());
+    await practice(page).getByRole('button', { name: 'Esencial (18)' }).click();
+    await expect(progressBar(page)).toHaveText('Pregunta 1 de 18 · Motivo del viaje');
+    await expect(practice(page).getByRole('button', { name: 'Esencial (18)' })).toHaveAttribute('aria-pressed', 'true');
+    expect(api.pageErrors).toEqual([]);
+  });
+
+  test('práctica ampliada completa: responde las 31 y termina', async ({ page, api }) => {
+    test.setTimeout(120_000);
+    await openTutor(page);
+    await practice(page).getByRole('button', { name: 'Ampliada (31)' }).click();
+    for (let i = 0; i < EXTENDED_QUESTIONS.length; i++) {
+      await expect(progressBar(page)).toContainText(`Pregunta ${i + 1} de 31`);
+      await answer(page, 'No'); // en la ampliada un "No" nunca salta preguntas
+    }
+    await expect(progressBar(page)).toHaveText('Práctica concluida');
+    expect(db.messages(caseId()).filter((m) => m.role === 'user')).toHaveLength(31);
     expect(api.pageErrors).toEqual([]);
   });
 

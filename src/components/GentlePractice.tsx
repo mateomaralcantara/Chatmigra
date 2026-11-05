@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { supabase } from '../services/supabaseClient';
 import {
-  GENTLE_FINISHED, GENTLE_PAUSED, GENTLE_QUESTIONS, GENTLE_RESUMED, GENTLE_WELCOME,
-  nextGentleIndex, resumeGentlePractice,
-  type GentleMessage, type GentleProgress,
+  GENTLE_PAUSED, GENTLE_RESUMED, PRACTICE_SETS,
+  nextPracticeIndex, resumeGentlePractice,
+  type GentleMessage, type GentleProgress, type PracticeSetId,
 } from '../../lib/tutor/gentlePractice';
 
 type Message = GentleMessage & { id?: string; created_at?: string };
@@ -17,7 +17,7 @@ type Recognition = {
 };
 type Props = {caseId:string;onExit:()=>void};
 const FIRST: GentleProgress = {
-  started:false,completed:false,paused:false,index:0,awaiting:false,answered:0,
+  started:false,completed:false,paused:false,index:0,awaiting:false,answered:0,set:'essential',
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -114,8 +114,10 @@ export default function GentlePractice({caseId,onExit}:Props) {
     busyRef.current=true;submittingRef.current=true;setBusy(true);setError('');clearTimer();
     if(spoken){micRef.current?.stop();setListening(false);}
     else if(voiceRef.current){stopVoice();}
-    const next=nextGentleIndex(state.index,text);
-    const prompt=next<GENTLE_QUESTIONS.length?GENTLE_QUESTIONS[next].text:GENTLE_FINISHED;
+    const practiceSet=PRACTICE_SETS[state.set];
+    const questions=practiceSet.questions;
+    const next=nextPracticeIndex(state.set,state.index,text);
+    const prompt=next<questions.length?questions[next].text:practiceSet.finished;
     try{
       // La siguiente pregunta aparece inmediatamente después de guardar
       // la respuesta. No hay un intervalo adicional de 15 segundos.
@@ -125,7 +127,7 @@ export default function GentlePractice({caseId,onExit}:Props) {
         {role:'model',content:prompt},
       ]);
       setAnswer('');setTranscript('');transcriptRef.current='';
-      if(next===GENTLE_QUESTIONS.length){
+      if(next===questions.length){
         stopVoice();setNotice('Práctica finalizada. Puedes repetirla cuando quieras.');
       }else if(spoken && voiceRef.current){
         speak(prompt);
@@ -139,22 +141,23 @@ export default function GentlePractice({caseId,onExit}:Props) {
     }
   };
 
-  const begin=async (restart=false)=>{
+  const begin=async (restart=false,choose?:PracticeSetId)=>{
     if(busyRef.current)return;
     busyRef.current=true;setBusy(true);setError('');setNotice('');
     try{
       const current=progressRef.current;
-      if(restart || !current.started || current.completed){
+      const target=PRACTICE_SETS[choose ?? current.set];
+      if(restart || !current.started || current.completed || target.id!==current.set){
         stopVoice();
         await save([
-          {role:'model',content:GENTLE_WELCOME},
-          {role:'model',content:GENTLE_QUESTIONS[0].text},
+          {role:'model',content:target.welcome},
+          {role:'model',content:target.questions[0].text},
         ]);
       }else if(current.paused){
         await save([{role:'model',content:GENTLE_RESUMED}]);
-      }else if(!current.awaiting && current.index<GENTLE_QUESTIONS.length){
+      }else if(!current.awaiting && current.index<target.questions.length){
         // Recupera cualquier pregunta pendiente tras cierre o recarga.
-        await save([{role:'model',content:GENTLE_QUESTIONS[current.index].text}]);
+        await save([{role:'model',content:target.questions[current.index].text}]);
       }
     }catch(err){setError(err instanceof Error?err.message:'No se pudo iniciar la práctica.');}
     finally{busyRef.current=false;if(aliveRef.current)setBusy(false);}
@@ -218,7 +221,7 @@ export default function GentlePractice({caseId,onExit}:Props) {
     };
     micRef.current=mic;voiceRef.current=true;
     setVoiceEnabled(true);setTranscript('');transcriptRef.current='';setNotice('');
-    const current=GENTLE_QUESTIONS[progressRef.current.index];
+    const current=PRACTICE_SETS[progressRef.current.set].questions[progressRef.current.index];
     if(current)speak(current.text);
   };
 
@@ -238,7 +241,8 @@ export default function GentlePractice({caseId,onExit}:Props) {
         const history=((data||[]) as Message[]).reverse();
         let start=-1;
         for(let i=history.length-1;i>=0;i--){
-          if(history[i].role==='model' && history[i].content===GENTLE_WELCOME){start=i;break;}
+          if(history[i].role==='model' && (history[i].content===PRACTICE_SETS.essential.welcome ||
+            history[i].content===PRACTICE_SETS.extended.welcome)){start=i;break;}
         }
         update(start<0?[]:history.slice(start));
         setBusy(false);busyRef.current=false;
@@ -280,18 +284,37 @@ export default function GentlePractice({caseId,onExit}:Props) {
     onExit();
   };
 
+  // Switching practice starts the other set from its first question.
+  const switchPractice=(id:PracticeSetId)=>{
+    const state=progressRef.current;
+    if(busyRef.current || id===state.set&&state.started&&!state.completed)return;
+    if(state.started&&!state.completed&&state.answered>0&&
+      !window.confirm('Se iniciará «'+PRACTICE_SETS[id].title+'» desde la primera pregunta. ¿Continuar?'))return;
+    void begin(true,id);
+  };
+
   const send=(event:FormEvent)=>{
     event.preventDefault();
     void submitAnswer(answer,false);
   };
 
-  const current=GENTLE_QUESTIONS[progress.index];
+  const practiceSet=PRACTICE_SETS[progress.set];
+  const current=practiceSet.questions[progress.index];
   return (
     <section className="cm-tutor-chat-layout" aria-label="Práctica Consular Amable">
       <header className="cm-tutor-chat-header">
         <div>
-          <h2>Práctica Consular Amable</h2>
-          <p>18 preguntas · siguiente pregunta automática al terminar de responder · sin reproches ni documentos</p>
+          <h2>{practiceSet.title}</h2>
+          <p>{practiceSet.questions.length} preguntas · siguiente pregunta automática al terminar de responder · sin reproches ni documentos</p>
+          <div className="cm-tutor-modes" role="group" aria-label="Elegir práctica">
+            {(['essential','extended'] as const).map(id=>(
+              <button key={id} type="button" disabled={busy}
+                aria-pressed={progress.set===id} className={progress.set===id?'is-active':''}
+                onClick={()=>switchPractice(id)}>
+                {id==='essential'?'Esencial (18)':'Ampliada (31)'}
+              </button>
+            ))}
+          </div>
         </div>
         <button type="button" className="cm-tutor-new-case" disabled={busy} onClick={()=>void exitPractice()}>
           Volver al Tutor
@@ -313,7 +336,7 @@ export default function GentlePractice({caseId,onExit}:Props) {
         <div className="cm-tutor-interview-bar">
           <span>{progress.completed?'Práctica concluida':
             progress.paused?'Práctica pausada':
-            progress.started&&current?('Pregunta '+(progress.index+1)+' de '+GENTLE_QUESTIONS.length+' · '+current.group):
+            progress.started&&current?('Pregunta '+(progress.index+1)+' de '+practiceSet.questions.length+' · '+current.group):
             'Preparando práctica...'}</span>
           {progress.started && !progress.completed && (
             <button type="button" disabled={busy}
@@ -380,6 +403,9 @@ export default function GentlePractice({caseId,onExit}:Props) {
               </div>
             </form>
           </>
+        )}
+        {progress.set==='extended' && (
+          <p className="cm-tutor-chat-notice"><strong>Nota:</strong> la actividad que explique en la entrevista debe coincidir con el propósito real del viaje y con la categoría de visa solicitada. Prepare respuestas claras y veraces.</p>
         )}
         <small>Las respuestas se guardan únicamente como práctica privada; no se consideran hechos verificados ni garantizan aprobación de visa.</small>
       </div>
