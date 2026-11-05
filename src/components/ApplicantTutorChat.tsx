@@ -2,13 +2,15 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEv
 import { supabase } from '../services/supabaseClient';
 import { naturalSpanishSpeech } from '../../lib/tutor/interview';
 import GentlePractice from './GentlePractice';
-import { GENTLE_FINISHED, GENTLE_PAUSED, GENTLE_RESUMED, GENTLE_WELCOME } from '../../lib/tutor/gentlePractice';
-import { CONSULAR_SKILLS, evaluateConsularAnswer, resumeConsularInterview, CONSULAR_FINISHED, type PreparedQuestion } from '../../lib/tutor/consularSkills';
+import { evaluateConsularAnswer, resumeConsularInterview, CONSULAR_FINISHED, type PreparedQuestion } from '../../lib/tutor/consularSkills';
+import ApplicantCaseTasks from './ApplicantCaseTasks';
+import TutorCaseManager from './tutor/TutorCaseManager';
 import TutorComposer from './tutor/TutorComposer';
+import { useCaseManagement } from './tutor/useCaseManagement';
 import TutorDocumentsBar from './tutor/TutorDocumentsBar';
 import TutorMessages from './tutor/TutorMessages';
 import {
-  BUCKET, LIMIT, FILE_TYPES, currentCaseId, routeToCase, loggedInUser, recognitionConstructor, exactFactReply,
+  BUCKET, LIMIT, FILE_TYPES, currentCaseId, routeToCase, loggedInUser, recognitionConstructor, exactFactReply, splitTutorHistory,
   type CaseRow, type SimulatorRun, type FactRow, type DocRow, type MessageRow, type Mode, type RecognitionEngine,
 } from './tutor/tutorShared';
 
@@ -107,7 +109,7 @@ export default function ApplicantTutorChat() {
     // sequential network roundtrips before showing the agent's first question.
     const [files, conversation, candidatesResult, readyResult] = await Promise.all([
       supabase.from('applicant_case_documents')
-        .select('id,filename,mime_type,storage_path,created_at')
+        .select('id,filename,mime_type,storage_path,created_at,uploaded_by')
         .eq('case_id', id).order('created_at', { ascending: false }),
       supabase.from('applicant_case_messages')
         .select('id,role,content,created_at')
@@ -137,34 +139,8 @@ export default function ApplicantTutorChat() {
       return (existing.length ? existing : fileRows.slice(0, 4).map(f => f.id)).slice(0, 4);
     });
     const history = ((conversation.data || []) as MessageRow[]).reverse();
-    // Keep practice answers isolated: they are neither documentary facts nor
-    // responses to the document-grounded consular simulator.
-    let inGentlePractice = false;
-    const documentHistory = history.filter(message => {
-      if (message.role === 'model' &&
-        (message.content === GENTLE_WELCOME || message.content === GENTLE_RESUMED)) {
-        inGentlePractice = true;
-        return false;
-      }
-      if (inGentlePractice) {
-        if (message.role === 'model' &&
-          (message.content === GENTLE_FINISHED || message.content === GENTLE_PAUSED)) {
-          inGentlePractice = false;
-        }
-        return false;
-      }
-      return true;
-    });
-    // Keep older chat/legacy intake available for inspection but outside the
-    // active consular conversation. It must never be mistaken for this agent's
-    // question or be used to grade the applicant's next answer.
-    const firstConsular = documentHistory.findIndex(message =>
-      message.role==='model' && (
-        message.content===CONSULAR_SKILLS[0].question ||
-        message.content==='¿Cuál es tu nombre completo, tal como figura en la solicitud?'
-      ));
-    const activeHistory = firstConsular<0 ? [] : documentHistory.slice(firstConsular);
-    setPreviousMessages(firstConsular<0 ? documentHistory : documentHistory.slice(0,firstConsular));
+    const { documentHistory, previous: earlierHistory, active: activeHistory } = splitTutorHistory(history);
+    setPreviousMessages(earlierHistory);
     setMessages(activeHistory);
     setOlderAvailable(history.length === 100);
     // The consular simulator, grounded in this applicant's indexed documents,
@@ -857,6 +833,22 @@ export default function ApplicantTutorChat() {
     } finally {setLoading(false);}
   };
 
+  const { inviteToCase, redeemInvite, deleteCase, leaveCase, removeDocument } = useCaseManagement({
+    caseId, busyRef, mountedRef, setLoading, setError, setNotice, setSelectedDocs,
+    refreshCase, refreshCases,
+    // After a case disappears (deleted or left), start from a clean slate. The
+    // first-case request is cleared so an empty account gets a NEW practice case
+    // instead of being handed the one that was just deleted.
+    forgetCurrentCase: async () => {
+      stopVoice();
+      simulatorRef.current = null; setSimulator(null);
+      initialCaseRequestRef.current = null;
+      routeToCase('');
+      setCaseId('');
+      await refreshCases();
+    },
+  });
+
   const toggleDoc = (id: string) => {
     setSelectedDocs(previous => {
       if (previous.includes(id)) return previous.filter(item => item !== id);
@@ -946,6 +938,26 @@ export default function ApplicantTutorChat() {
           onPrepare={() => void prepareFastSearch()}
           onToggleDoc={toggleDoc}
           onReviewFact={(fact, approve) => void reviewFact(fact, approve)}
+          canDeleteDoc={doc => cases.find(c=>c.id===caseId)?.owner_id===currentUserId || doc.uploaded_by===currentUserId}
+          onDeleteDoc={doc => void removeDocument(doc)}
+        />
+
+        {caseId && currentUserId && (
+          <details className="cm-tutor-documents cm-tutor-case-manager">
+            <summary>Tareas pendientes</summary>
+            <ApplicantCaseTasks key={caseId} caseId={caseId}
+              ownerId={cases.find(c=>c.id===caseId)?.owner_id || ''} currentUserId={currentUserId} />
+          </details>
+        )}
+
+        <TutorCaseManager
+          activeCase={cases.find(c=>c.id===caseId)}
+          isOwner={cases.find(c=>c.id===caseId)?.owner_id===currentUserId}
+          busy={loading}
+          onInvite={inviteToCase}
+          onRedeem={redeemInvite}
+          onDelete={deleteCase}
+          onLeave={leaveCase}
         />
 
         <TutorComposer

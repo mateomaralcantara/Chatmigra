@@ -1,10 +1,11 @@
 import { supabase } from '../../services/supabaseClient';
 import type { PreparedQuestion } from '../../../lib/tutor/consularSkills';
+export { splitTutorHistory } from '../../../lib/tutor/history';
 
 export type CaseRow = { id: string; applicant_name: string; owner_id: string; nationality: string; destination: string; visa_type: string };
 export type SimulatorRun = { questions: PreparedQuestion[]; index:number; attempts:number; alerts:string[]; excluded:string[]; unindexed:string[] };
 export type FactRow = { id:string; fact_key:string; fact_value:string; document_id:string|null; verification_status:'pending_review'|'verified'|'rejected' };
-export type DocRow = { id: string; filename: string; mime_type: string; storage_path: string; created_at: string };
+export type DocRow = { id: string; filename: string; mime_type: string; storage_path: string; created_at: string; uploaded_by?: string | null };
 export type MessageRow = { id?: string; role: 'user' | 'model'; content: string; created_at?: string };
 export type Mode = 'chat' | 'voice';
 export type RecognitionEntry = ArrayLike<{ transcript: string }> & { isFinal?: boolean };
@@ -79,3 +80,4 @@ export const FACT_LABELS: Record<string,string> = {
   nationality:'Nacionalidad',destination:'País de destino',
   visa_type:'Tipo de visa',passport_number:'Número de pasaporte',
 };
+
