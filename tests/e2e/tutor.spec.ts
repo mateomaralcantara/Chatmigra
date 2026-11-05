@@ -263,6 +263,9 @@ test.describe('Tutor · Simulacro con documentos', () => {
     await practice(page).getByRole('button', { name: 'Volver al Tutor' }).click();
     await reply(page, 'Ana Pérez');
     await expect(tutor(page).getByText(QUESTIONS[1].question)).toBeVisible();
+    // The next question is shown immediately and saved right after; reload
+    // only once the answer and the new question are really stored.
+    await expect.poll(() => db.messages(caseId()).map((m) => m.content)).toContain(QUESTIONS[1].question);
 
     await page.reload();
     // La práctica amable se abre primero; al volver, el simulacro sigue donde estaba.

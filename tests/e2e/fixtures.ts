@@ -109,4 +109,10 @@ export async function login(page: Page, password = 'correcta-123') {
   await page.getByPlaceholder('Correo electrónico').fill(USER.email);
   await page.getByPlaceholder('Contraseña').fill(password);
   await page.getByRole('button', { name: 'Entrar' }).click();
+  // A valid login must finish before the test clicks anything else: the top
+  // bar (e.g. «Tutor Personal») is already on screen during login, and a
+  // click there before the app mounts is lost.
+  if (password === 'correcta-123') {
+    await expect(page.getByRole('heading', { name: 'Inicia sesión' })).toBeHidden({ timeout: 15_000 });
+  }
 }
